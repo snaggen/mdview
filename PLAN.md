@@ -94,7 +94,7 @@ selectable and copyable. Edit actions are dropped in `update`. Monospace font fr
 - File removed: keep showing the last content with a notice in the header; resume if the file
   reappears (rename-save). Read errors mid-save (truncated or partial file) are retried on the
   next event instead of replacing the view with an error.
-- Relative images are reloaded too when they change (cache keyed on path + mtime).
+- Local images are re-read on every reload of the document.
 
 ## UI (COSMIC patterns)
 
@@ -116,7 +116,8 @@ src/
   main.rs        startup, CLI arg, cosmic::app::run
   app.rs         Application impl: Message, update, view, header, context drawer
   document.rs    load file, parse into markdown::Content, resolve relative paths
-  viewer.rs      markdown::Viewer impl: code blocks, images (local files), links
+  viewer.rs      markdown::Viewer impl: code blocks, images (local files), page-wide tables
+  link.rs        resolve links and image references relative to the document
   highlight.rs   syntect setup, COSMIC themes, code-block and source highlighting
   config.rs      cosmic-config settings (content translucency), versioned
   style.rs       content container style from translucency + theme alpha map

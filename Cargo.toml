@@ -11,8 +11,12 @@ i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester
 i18n-embed-fl = "0.10"
 log = "0.4"
 notify-debouncer-full = { version = "0.7", default-features = false }
+open = "5"
+# Same version as libcosmic's markdown widget; only its `Alignment` type is used.
+pulldown-cmark = { version = "0.12", default-features = false }
 rust-embed = "8"
 tokio = { version = "1", features = ["fs"] }
+url = "2"
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"

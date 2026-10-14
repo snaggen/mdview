@@ -2,8 +2,10 @@
 
 mod app;
 mod document;
+mod link;
 mod localize;
 mod style;
+mod viewer;
 mod watch;
 
 use std::path::PathBuf;

@@ -1,8 +1,12 @@
 //! Reading and parsing a Markdown document.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use cosmic::widget::markdown;
+use cosmic::widget::{image, markdown, svg};
+
+use crate::link;
+use crate::viewer::Image;
 
 /// A Markdown file that has been read and parsed.
 pub struct Document {
@@ -15,6 +19,11 @@ impl Document {
     pub fn new(path: PathBuf, source: String) -> Self {
         let content = markdown::Content::parse(&source);
         Self { path, content }
+    }
+
+    /// The directory relative links and images are resolved against.
+    pub fn base_dir(&self) -> &Path {
+        self.path.parent().unwrap_or(Path::new("/"))
     }
 
     /// The name shown in the header bar and window title.
@@ -41,6 +50,40 @@ pub async fn read(path: PathBuf) -> (PathBuf, Result<String, String>) {
     (path, result)
 }
 
+/// Reads the local images referenced by a document. Remote images and files that
+/// cannot be read are left out, so they show their alt text.
+pub async fn load_images(
+    base_dir: PathBuf,
+    urls: Vec<markdown::Uri>,
+) -> HashMap<markdown::Uri, Image> {
+    let mut images = HashMap::new();
+    for url in urls {
+        let Some(path) = link::local_file(&url, &base_dir) else {
+            continue;
+        };
+        match tokio::fs::read(&path).await {
+            Ok(bytes) => {
+                images.insert(url, decode(&path, bytes));
+            }
+            Err(error) => log::debug!("cannot read image {}: {error}", path.display()),
+        }
+    }
+    images
+}
+
+/// Wraps image bytes in the handle type matching the file. Decoding itself
+/// happens in the renderer.
+fn decode(path: &Path, bytes: Vec<u8>) -> Image {
+    let is_svg = path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("svg"));
+    if is_svg {
+        Image::Svg(svg::Handle::from_memory(bytes))
+    } else {
+        Image::Raster(image::Handle::from_bytes(bytes))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -61,10 +104,27 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[tokio::test]
+    async fn load_images_skips_remote_and_missing() {
+        let dir = std::env::temp_dir().join(format!("mdview-img-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.svg"), "<svg/>").unwrap();
+        std::fs::write(dir.join("b.png"), [0u8; 4]).unwrap();
+
+        let urls = ["a.svg", "b.png", "missing.png", "https://example.com/c.png"];
+        let images = load_images(dir.clone(), urls.map(String::from).to_vec()).await;
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert!(matches!(images.get("a.svg"), Some(Image::Svg(_))));
+        assert!(matches!(images.get("b.png"), Some(Image::Raster(_))));
+        assert_eq!(images.len(), 2);
+    }
+
     #[test]
     fn document_parses_source() {
         let doc = Document::new(PathBuf::from("a.md"), "# Title\n\nText".into());
         assert_eq!(doc.content.items().len(), 2);
         assert_eq!(doc.title(), "a.md");
+        assert_eq!(doc.base_dir(), Path::new(""));
     }
 }

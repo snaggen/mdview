@@ -1,5 +1,6 @@
 //! The COSMIC application: state, messages, update and view.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use cosmic::app::{Core, Task};
@@ -10,7 +11,9 @@ use cosmic::{Application, ApplicationExt, Element, action, theme};
 
 use crate::document::{self, Document};
 use crate::fl;
+use crate::link::{self, Link};
 use crate::style;
+use crate::viewer::{DocViewer, Image};
 use crate::watch;
 
 /// Maximum width of the document column, so lines stay readable in wide windows.
@@ -53,6 +56,11 @@ pub enum Message {
         path: PathBuf,
         result: Result<String, String>,
     },
+    /// Images of the document read by request `request` have been loaded.
+    ImagesLoaded {
+        request: u64,
+        images: HashMap<markdown::Uri, Image>,
+    },
     FileChanged,
     LinkClicked(markdown::Uri),
 }
@@ -65,6 +73,8 @@ pub struct App {
     /// Set when re-reading the open document failed (e.g. it was deleted). The last
     /// good content stays visible and the next change on disk retries.
     reload_error: Option<String>,
+    /// Local images of the open document, keyed by the URL written in the Markdown.
+    images: HashMap<markdown::Uri, Image>,
 }
 
 impl Application for App {
@@ -88,6 +98,7 @@ impl Application for App {
             state: State::Empty,
             request: 0,
             reload_error: None,
+            images: HashMap::new(),
         };
         let title = app.update_title();
         let open = match flags.path {
@@ -131,7 +142,12 @@ impl Application for App {
             } => {
                 if request == self.request {
                     self.loaded(path, result);
-                    return self.update_title();
+                    return Task::batch([self.update_title(), self.load_images()]);
+                }
+            }
+            Message::ImagesLoaded { request, images } => {
+                if request == self.request {
+                    self.images = images;
                 }
             }
             Message::FileChanged => {
@@ -139,7 +155,7 @@ impl Application for App {
                     return self.read(path.clone());
                 }
             }
-            Message::LinkClicked(url) => log::debug!("link clicked: {url}"),
+            Message::LinkClicked(url) => return self.follow_link(&url),
         }
         Task::none()
     }
@@ -156,7 +172,7 @@ impl Application for App {
                 fl!("load-failed", path = document::display_name(path)),
                 error.clone(),
             ),
-            State::Loaded(doc) => rendered(doc),
+            State::Loaded(doc) => rendered(doc, &self.images),
         }
     }
 }
@@ -178,6 +194,37 @@ impl App {
                 result,
             })
         })
+    }
+
+    /// Starts loading the images of the open document. Images are re-read on every
+    /// reload, so edited images show up together with the edited text.
+    fn load_images(&self) -> Task<Message> {
+        let State::Loaded(doc) = &self.state else {
+            return Task::none();
+        };
+        let request = self.request;
+        let urls = doc.content.images().iter().cloned().collect();
+        Task::perform(
+            document::load_images(doc.base_dir().to_path_buf(), urls),
+            move |images| action::app(Message::ImagesLoaded { request, images }),
+        )
+    }
+
+    /// Opens a clicked link: Markdown files in this window, everything else with the
+    /// desktop's default application.
+    fn follow_link(&mut self, url: &str) -> Task<Message> {
+        let State::Loaded(doc) = &self.state else {
+            return Task::none();
+        };
+        match link::resolve(url, doc.base_dir()) {
+            Some(Link::Document(path)) => return self.open(path),
+            Some(Link::External(url)) => open_externally(url),
+            Some(Link::File(path)) => open_externally(path.into_os_string()),
+            // Scrolling to headings is not supported.
+            Some(Link::Anchor) => {}
+            None => log::warn!("cannot resolve link {url}"),
+        }
+        Task::none()
     }
 
     /// Applies a finished read.
@@ -215,11 +262,18 @@ impl App {
 }
 
 /// The rendered document in a scrollable, centered column.
-fn rendered(doc: &Document) -> Element<'_, Message> {
+fn rendered<'a>(
+    doc: &'a Document,
+    images: &'a HashMap<markdown::Uri, Image>,
+) -> Element<'a, Message> {
     let theme = theme::active();
     let spacing = theme.cosmic().spacing;
-    let content = markdown::view(doc.content.items(), style::markdown_settings(&theme))
-        .map(Message::LinkClicked);
+    let viewer = DocViewer { images };
+    let content = markdown::view_with(
+        doc.content.items(),
+        style::markdown_settings(&theme),
+        &viewer,
+    );
 
     let column = widget::container(content)
         .max_width(READABLE_WIDTH)
@@ -261,6 +315,14 @@ fn icon_button<'a>(
         tooltip::Position::Bottom,
     )
     .into()
+}
+
+/// Hands a URL or path to the desktop's default handler, without blocking the UI.
+fn open_externally(target: impl Into<std::ffi::OsString>) {
+    let target = target.into();
+    if let Err(error) = open::that_detached(&target) {
+        log::warn!("cannot open {}: {error}", target.to_string_lossy());
+    }
 }
 
 /// A warning icon in the header bar, explaining itself in a tooltip.
@@ -307,6 +369,7 @@ mod tests {
             state: State::Empty,
             request: 0,
             reload_error: None,
+            images: HashMap::new(),
         }
     }
 
