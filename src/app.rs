@@ -5,13 +5,14 @@ use std::path::PathBuf;
 
 use cosmic::app::{Core, Task};
 use cosmic::dialog::file_chooser::{self, FileFilter};
+use cosmic::iced::widget::text_editor;
 use cosmic::iced::{Alignment, Color, Length, Subscription};
 use cosmic::widget::{self, button, icon, markdown, tooltip};
 use cosmic::{Application, ApplicationExt, Element, action, theme};
 
 use crate::document::{self, CodeBlock, Document};
 use crate::fl;
-use crate::highlight;
+use crate::highlight::{self, SourceHighlighter};
 use crate::link::{self, Link};
 use crate::style;
 use crate::viewer::{DocViewer, Image};
@@ -71,6 +72,9 @@ pub enum Message {
     },
     FileChanged,
     LinkClicked(markdown::Uri),
+    ToggleSource,
+    /// Cursor movement, selection or scrolling in the source view.
+    SourceAction(text_editor::Action),
 }
 
 pub struct App {
@@ -87,6 +91,8 @@ pub struct App {
     highlights: HashMap<u64, Vec<highlight::Line>>,
     /// Whether the desktop uses a dark theme, which selects the syntax theme.
     dark: bool,
+    /// Show the Markdown source instead of the rendered document.
+    show_source: bool,
 }
 
 impl Application for App {
@@ -113,6 +119,7 @@ impl Application for App {
             images: HashMap::new(),
             highlights: HashMap::new(),
             dark: theme::active().cosmic().is_dark,
+            show_source: false,
         };
         let title = app.update_title();
         let open = match flags.path {
@@ -129,6 +136,17 @@ impl Application for App {
                 "reload-failed",
                 error = error.as_str()
             )));
+        }
+        if matches!(self.state, State::Loaded(_)) {
+            items.push(if self.show_source {
+                icon_button(
+                    "document-print-preview-symbolic",
+                    fl!("show-rendered"),
+                    Message::ToggleSource,
+                )
+            } else {
+                icon_button("markup-symbolic", fl!("show-source"), Message::ToggleSource)
+            });
         }
         items.push(icon_button(
             "document-open-symbolic",
@@ -183,6 +201,15 @@ impl Application for App {
                 }
             }
             Message::LinkClicked(url) => return self.follow_link(&url),
+            Message::ToggleSource => self.show_source = !self.show_source,
+            Message::SourceAction(action) => {
+                // The source view is read-only: apply everything except edits.
+                if let State::Loaded(doc) = &mut self.state
+                    && !action.is_edit()
+                {
+                    doc.source.perform(action);
+                }
+            }
         }
         Task::none()
     }
@@ -199,6 +226,7 @@ impl Application for App {
                 fl!("load-failed", path = document::display_name(path)),
                 error.clone(),
             ),
+            State::Loaded(doc) if self.show_source => self.source(doc),
             State::Loaded(doc) => self.rendered(doc),
         }
     }
@@ -309,6 +337,22 @@ impl App {
                 .center_x(Length::Fill),
         )
         .into()
+    }
+
+    /// The Markdown source in a read-only, highlighted text editor, where text can be
+    /// selected and copied.
+    fn source<'a>(&'a self, doc: &'a Document) -> Element<'a, Message> {
+        let spacing = theme::active().cosmic().spacing;
+        text_editor(&doc.source)
+            .on_action(Message::SourceAction)
+            .highlight_with::<SourceHighlighter>(self.dark, highlight::source_format)
+            .font(cosmic::font::mono())
+            .padding([spacing.space_m, spacing.space_l])
+            .height(Length::Fill)
+            .class(theme::iced::TextEditor::Custom(Box::new(
+                style::source_editor,
+            )))
+            .into()
     }
 
     /// Opens a clicked link: Markdown files in this window, everything else with the
@@ -464,6 +508,7 @@ mod tests {
             images: HashMap::new(),
             highlights: HashMap::new(),
             dark: true,
+            show_source: false,
         }
     }
 
@@ -532,6 +577,24 @@ mod tests {
         let highlights = highlight_blocks(&blocks, true, Color::WHITE);
         let key = document::code_key(Some("rust"), "fn a() {}");
         assert_eq!(highlights[&key].len(), 1);
+    }
+
+    #[test]
+    fn source_view_ignores_edits_but_allows_selection() {
+        let mut app = app();
+        app.loaded(path(), Ok("# Hello".into()));
+        let _ = app.update(Message::ToggleSource);
+        assert!(app.show_source);
+
+        let edit = text_editor::Action::Edit(text_editor::Edit::Insert('x'));
+        let _ = app.update(Message::SourceAction(edit));
+        let _ = app.update(Message::SourceAction(text_editor::Action::SelectAll));
+
+        let State::Loaded(doc) = &app.state else {
+            panic!("document should stay loaded");
+        };
+        assert_eq!(doc.source.text(), "# Hello");
+        assert_eq!(doc.source.selection().as_deref(), Some("# Hello"));
     }
 
     #[test]

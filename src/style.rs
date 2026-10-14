@@ -1,6 +1,6 @@
 //! Markdown styling derived from the active COSMIC theme.
 
-use cosmic::iced::widget::container;
+use cosmic::iced::widget::{container, text_editor};
 use cosmic::iced::{Background, Color, border, padding};
 use cosmic::widget::markdown;
 
@@ -44,5 +44,22 @@ fn markdown_style(theme: &cosmic::Theme) -> markdown::Style {
         inline_code_font: cosmic::font::mono(),
         code_block_font: cosmic::font::mono(),
         link_color: Color::from(cosmic.accent_text_color()),
+    }
+}
+
+/// The source view is a plain surface: no field border or background of its own,
+/// so it reads as the page rather than an input field.
+pub fn source_editor(theme: &cosmic::Theme, _status: text_editor::Status) -> text_editor::Style {
+    let cosmic = theme.cosmic();
+    let value = Color::from(cosmic.on_bg_color());
+    text_editor::Style {
+        background: Background::Color(Color::TRANSPARENT),
+        border: border::Border::default(),
+        placeholder: Color { a: 0.7, ..value },
+        value,
+        selection: Color {
+            a: 0.4,
+            ..Color::from(cosmic.accent_color())
+        },
     }
 }

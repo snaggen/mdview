@@ -7,3 +7,5 @@ empty-title = No document open
 empty-body = Open a Markdown file to view it here.
 load-failed = Could not open { $path }
 reload-failed = The file could not be re-read: { $error }
+show-source = Show Markdown source
+show-rendered = Show rendered document

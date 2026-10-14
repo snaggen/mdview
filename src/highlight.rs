@@ -2,9 +2,11 @@
 //! that COSMIC Text Editor uses by default.
 
 use std::io::Cursor;
+use std::ops::Range;
 use std::sync::LazyLock;
 
 use cosmic::iced::Color;
+use cosmic::iced::advanced::text::highlighter;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{FontStyle, Theme, ThemeSet};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
@@ -85,6 +87,99 @@ pub fn highlight(code: &str, language: Option<&str>, dark: bool, default: Color)
         .collect()
 }
 
+/// Highlights the Markdown source shown in the source view's text editor.
+///
+/// The editor feeds lines one at a time, without line endings, and restarts from
+/// [`current_line`](highlighter::Highlighter::current_line) after a change. The
+/// source view is read-only, so changes only happen when the file is reloaded;
+/// restarting from the top then is simple and cheap enough.
+pub struct SourceHighlighter {
+    lines: HighlightLines<'static>,
+    dark: bool,
+    current: usize,
+}
+
+impl SourceHighlighter {
+    fn start(dark: bool) -> Self {
+        let highlighter = &*HIGHLIGHTER;
+        let theme = if dark {
+            &highlighter.dark
+        } else {
+            &highlighter.light
+        };
+        let syntax = find_syntax(&highlighter.syntaxes, Some("md"));
+        Self {
+            lines: HighlightLines::new(syntax, theme),
+            dark,
+            current: 0,
+        }
+    }
+}
+
+impl highlighter::Highlighter for SourceHighlighter {
+    /// Whether to use the dark theme.
+    type Settings = bool;
+    type Highlight = Color;
+    type Iterator<'a> = std::vec::IntoIter<(Range<usize>, Color)>;
+
+    fn new(dark: &bool) -> Self {
+        Self::start(*dark)
+    }
+
+    fn update(&mut self, dark: &bool) {
+        if *dark != self.dark {
+            *self = Self::start(*dark);
+        }
+    }
+
+    fn change_line(&mut self, _line: usize) {
+        *self = Self::start(self.dark);
+    }
+
+    fn highlight_line(&mut self, line: &str) -> Self::Iterator<'_> {
+        self.current += 1;
+        // The syntax set expects line endings; ranges past the line are dropped.
+        let with_ending = format!("{line}\n");
+        let ranges = match self
+            .lines
+            .highlight_line(&with_ending, &HIGHLIGHTER.syntaxes)
+        {
+            Ok(ranges) => ranges,
+            Err(error) => {
+                log::debug!("highlighting failed: {error}");
+                return Vec::new().into_iter();
+            }
+        };
+        let mut start = 0;
+        let mut highlights = Vec::with_capacity(ranges.len());
+        for (style, text) in ranges {
+            let end = (start + text.len()).min(line.len());
+            if start < end {
+                let c = style.foreground;
+                let color = Color::from_rgba8(c.r, c.g, c.b, f32::from(c.a) / 255.0);
+                highlights.push((start..end, color));
+            }
+            start += text.len();
+        }
+        highlights.into_iter()
+    }
+
+    fn current_line(&self) -> usize {
+        self.current
+    }
+}
+
+/// Text editor format for a [`SourceHighlighter`] colour.
+pub fn source_format(
+    color: &Color,
+    _theme: &cosmic::Theme,
+) -> highlighter::Format<cosmic::iced::Font> {
+    highlighter::Format {
+        color: Some(*color),
+        font: None,
+    }
+}
+
 /// The syntax for a code fence token, matched against syntax names and file
 /// extensions, or plain text.
 fn find_syntax<'a>(syntaxes: &'a SyntaxSet, language: Option<&str>) -> &'a SyntaxReference {
@@ -141,6 +236,21 @@ mod tests {
     fn unknown_language_is_plain_text() {
         let lines = highlight("a b c", Some("no-such-language"), true, Color::WHITE);
         assert_eq!(text(&lines), ["a b c"]);
+    }
+
+    #[test]
+    fn source_highlighter_covers_line_within_bounds() {
+        use highlighter::Highlighter as _;
+
+        let mut source = SourceHighlighter::new(&true);
+        let line = "# Title with `code`";
+        let ranges: Vec<_> = source.highlight_line(line).collect();
+        assert!(!ranges.is_empty());
+        assert!(ranges.iter().all(|(range, _)| range.end <= line.len()));
+        assert_eq!(source.current_line(), 1);
+
+        source.change_line(0);
+        assert_eq!(source.current_line(), 0);
     }
 
     #[test]

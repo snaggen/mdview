@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 
+use cosmic::iced::widget::text_editor;
 use cosmic::widget::markdown::{Bullet, Item};
 use cosmic::widget::{image, markdown, svg};
 
@@ -14,13 +15,20 @@ use crate::viewer::Image;
 pub struct Document {
     pub path: PathBuf,
     pub content: markdown::Content,
+    /// The raw Markdown, for the source view.
+    pub source: text_editor::Content<cosmic::Renderer>,
 }
 
 impl Document {
     /// Parses `source`, read from `path`.
     pub fn new(path: PathBuf, source: String) -> Self {
         let content = markdown::Content::parse(&source);
-        Self { path, content }
+        let source = text_editor::Content::with_text(&source);
+        Self {
+            path,
+            content,
+            source,
+        }
     }
 
     /// The directory relative links and images are resolved against.
