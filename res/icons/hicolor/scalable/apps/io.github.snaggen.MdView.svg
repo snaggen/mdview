@@ -8,10 +8,6 @@
       <stop offset="0" stop-color="#ffffff"/>
       <stop offset="1" stop-color="#e6ebf0"/>
     </linearGradient>
-    <radialGradient id="iris" cx="0.4" cy="0.35" r="0.75">
-      <stop offset="0" stop-color="#7fd0da"/>
-      <stop offset="1" stop-color="#2f97a8"/>
-    </radialGradient>
   </defs>
   <!-- Document with a folded corner -->
   <path d="M28 8h46l26 26v78a8 8 0 0 1-8 8H28a8 8 0 0 1-8-8V16a8 8 0 0 1 8-8z"
@@ -26,9 +22,10 @@
   <rect x="30" y="53" width="60" height="5" rx="2.5" fill="#a7b2be"/>
   <rect x="30" y="64" width="40" height="5" rx="2.5" fill="#a7b2be"/>
   <!-- Stylized eye -->
-  <path d="M40 92Q76 62 116 92Q76 122 40 92Z" fill="url(#white)" stroke="#6b7886"
-        stroke-width="3.5" stroke-linejoin="round"/>
-  <circle cx="78" cy="92" r="13" fill="url(#iris)" stroke="#2a7f8e" stroke-width="1.5"/>
-  <circle cx="78" cy="92" r="6" fill="#3a4855"/>
-  <circle cx="74" cy="88" r="2.5" fill="#ffffff" fill-opacity="0.9"/>
+  <!-- Eye: rounded almond outline, iris ring, pupil with a highlight -->
+  <path d="M42 92C52 76 64 69 78 69C92 69 104 76 114 92C104 108 92 115 78 115C64 115 52 108 42 92Z"
+        fill="url(#white)" stroke="#4f5c69" stroke-width="5" stroke-linejoin="round"/>
+  <circle cx="78" cy="92" r="16" fill="#ffffff" stroke="#1f8fa3" stroke-width="5"/>
+  <circle cx="78" cy="92" r="8" fill="#176f80"/>
+  <circle cx="75" cy="89" r="2.6" fill="#ffffff"/>
 </svg>
