@@ -64,3 +64,7 @@ srpm: dist vendor
 # Binary RPM, built locally with rpmbuild.
 rpm: dist vendor
     rpmbuild -bb --define "_topdir {{rpmdir}}/build" --define "_sourcedir {{rpmdir}}" --define "_rpmdir {{rpmdir}}" packaging/{{name}}.spec
+
+# Binary RPM built with the Rust toolchain on PATH (rustup/mise), skipping the build dependency check.
+rpm-local: dist vendor
+    rpmbuild -bb --nodeps --define "_topdir {{rpmdir}}/build" --define "_sourcedir {{rpmdir}}" --define "_rpmdir {{rpmdir}}" packaging/{{name}}.spec

@@ -37,7 +37,11 @@ The package builds offline from vendored crates, so it also works in mock and CO
 ```sh
 just rpm      # binary RPM in target/rpm/
 just srpm     # source RPM, e.g. for COPR
+just rpm-local  # binary RPM using the rustup/mise toolchain instead of Fedora's rust packages
 ```
+
+`just rpm` needs `cargo rust gcc libxkbcommon-devel desktop-file-utils appstream` installed with
+dnf; `rpm-local` skips that check and only needs `libxkbcommon-devel` and the other tools.
 
 `dist` packs the committed `HEAD`, so commit before building. When dependencies change, update
 the spec's License tag with `packaging/dependency-licenses.py --spec`.
