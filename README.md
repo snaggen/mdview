@@ -1,52 +1,109 @@
-# mdview
+<p align="center">
+  <img src="res/icons/hicolor/scalable/apps/io.github.snaggen.MdView.svg" width="128" alt="mdview icon">
+</p>
 
-A simple Markdown viewer for the [COSMIC](https://github.com/pop-os/cosmic-epoch) desktop.
-Colours, fonts and light/dark mode follow the system theme.
+<h1 align="center">mdview</h1>
+
+<p align="center">A simple, native Markdown viewer for the <a href="https://github.com/pop-os/cosmic-epoch">COSMIC</a> desktop.</p>
+
+mdview opens a Markdown file and renders it, nothing more. It is built with
+[libcosmic](https://github.com/pop-os/libcosmic), so colours, fonts, accent and light/dark mode
+come from your desktop theme.
+
+```sh
+mdview README.md
+```
+
+## Features
+
+- **Native rendering** of CommonMark and GitHub extensions: tables, task lists, strikethrough,
+  quotes, images and syntax-highlighted code.
+- **Follows the system theme**, including switching between light and dark while open.
+- **Live reload**: the view updates when the file is saved, keeping your scroll position. Works
+  with editors that save by renaming a temporary file.
+- **Source view** of the raw Markdown, with selection, copy and middle-click paste (PRIMARY).
+- **Code colour themes**: COSMIC (default), GitHub, Gruvbox Material and Everforest, each in a
+  light and a dark variant that follows the desktop.
+- **Adjustable background opacity**, using COSMIC's blur levels so the blurred desktop can show
+  through behind the document.
+- **Links**: Markdown files open in mdview, everything else in your default application.
+- Tables fit the page width and wrap their cells instead of scrolling sideways.
+
+Text selection in the rendered view is not supported yet (libcosmic's rich text widget has none);
+use the source view to copy text.
+
+## Usage
 
 ```sh
 mdview path/to/file.md
 ```
 
-The view reloads when the file changes on disk. Code blocks are highlighted with the
-COSMIC syntax themes (or GitHub, Gruvbox Material or Everforest), and the settings let the
-document background be translucent.
+Without a file, mdview shows an **Open** button. Settings (opacity and code colours) open from the
+gear button and are remembered between runs.
 
-| Keys | Action |
-|---|---|
-| Ctrl+O | Open a file |
-| Ctrl+R | Reload |
-| Ctrl+U | Toggle Markdown source |
-| Ctrl+, | Settings |
-| Ctrl+Q | Quit |
+| Keys    | Action                          |
+|---------|---------------------------------|
+| Ctrl+O  | Open a file                     |
+| Ctrl+R  | Reload                          |
+| Ctrl+U  | Toggle rendered / source view   |
+| Ctrl+,  | Settings                        |
+| Esc     | Close settings                  |
+| Ctrl+Q  | Quit                            |
 
-## Build and install
+To make mdview the default application for Markdown files, choose it in COSMIC Settings →
+Default applications, or run `just set-default`.
 
-Toolchain versions are pinned in `mise.toml` (`mise install`).
+## Installation
 
-```sh
-just install          # installs into ~/.local
-just prefix=/usr/local install
-just check            # fmt, clippy, tests
-```
-
-To make mdview the default application for Markdown files: `just set-default`.
-
-## Fedora RPM
-
-The package builds offline from vendored crates, so it also works in mock and COPR.
+### Fedora RPM
 
 ```sh
-just rpm      # binary RPM in target/rpm/
-just srpm     # source RPM, e.g. for COPR
-just rpm-local  # binary RPM using the rustup/mise toolchain instead of Fedora's rust packages
+just rpm-local                                     # build with your rustup/mise toolchain
+sudo dnf install target/rpm/x86_64/mdview-*.rpm
 ```
 
-`just rpm` needs `cargo rust gcc libxkbcommon-devel desktop-file-utils appstream` installed with
-dnf; `rpm-local` skips that check and only needs `libxkbcommon-devel` and the other tools.
+`just rpm` builds with Fedora's own `cargo` and `rust` packages instead, and `just srpm` makes a
+source RPM for COPR or mock. The package builds offline from vendored crates.
 
-`dist` packs the committed `HEAD`, so commit before building. When dependencies change, update
-the spec's License tag with `packaging/dependency-licenses.py --spec`.
+### From source
+
+Requirements: Rust (pinned in `mise.toml`, install with `mise install`), `just`, a C compiler and
+the `libxkbcommon` development files (`sudo dnf install gcc libxkbcommon-devel` on Fedora).
+
+```sh
+just install                    # into ~/.local
+just prefix=/usr/local install  # system-wide
+just uninstall
+```
+
+## Development
+
+```sh
+just run examples/sample.md   # run a debug build on a document using every element
+just check                    # cargo fmt, clippy -D warnings and tests
+```
+
+[PLAN.md](PLAN.md) describes the design and the decisions behind it.
+
+### Packaging notes
+
+- `just dist` packs the committed `HEAD`, so commit before building packages.
+- When dependencies change, update the License tag in `packaging/mdview.spec` with
+  `packaging/dependency-licenses.py --spec`.
+- The extra code colour themes are converted from their authors' VS Code themes with
+  `tools/vscode-to-tmtheme.py`; see [res/syntax-themes](res/syntax-themes/README.md).
+
+## Credits
+
+- [libcosmic](https://github.com/pop-os/libcosmic) and [iced](https://github.com/iced-rs/iced) for
+  the toolkit and markdown widget.
+- [syntect](https://github.com/trishume/syntect) and [two-face](https://github.com/CosmicHorrorDev/two-face)
+  for syntax highlighting, and [cosmic-syntax-theme](https://github.com/pop-os/cosmic-syntax-theme)
+  for the COSMIC colour themes.
+- Code colour themes: [GitHub](https://github.com/primer/github-vscode-theme),
+  [Gruvbox Material](https://github.com/sainnhe/gruvbox-material) and
+  [Everforest](https://github.com/sainnhe/everforest) (MIT).
 
 ## License
 
-EUPL-1.2. See [PLAN.md](PLAN.md) for the design.
+mdview is licensed under the [European Union Public Licence 1.2](LICENSE).
