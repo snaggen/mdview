@@ -33,6 +33,9 @@ pub struct DocViewer<'a> {
     /// Highlighted code blocks, keyed by [`code_key`]. Blocks not highlighted yet are
     /// shown as plain text.
     pub highlights: &'a HashMap<u64, Vec<highlight::Line>>,
+    /// Background for code blocks from the syntax theme, or `None` for the theme's
+    /// component colour.
+    pub code_background: Option<cosmic::iced::Color>,
 }
 
 impl<'a> markdown::Viewer<'a, Message, Theme, Renderer> for DocViewer<'a> {
@@ -61,8 +64,8 @@ impl<'a> markdown::Viewer<'a, Message, Theme, Renderer> for DocViewer<'a> {
         }
     }
 
-    /// Code blocks use the COSMIC syntax themes (the default one is always dark) and
-    /// scroll sideways rather than wrapping.
+    /// Code blocks use the chosen syntax theme (the widget's default is always dark)
+    /// and scroll sideways rather than wrapping.
     fn code_block(
         &self,
         settings: Settings,
@@ -92,7 +95,10 @@ impl<'a> markdown::Viewer<'a, Message, Theme, Renderer> for DocViewer<'a> {
             )),
         )
         .width(Length::Fill)
-        .class(cosmic::theme::Container::custom(style::code_block))
+        .class(cosmic::theme::Container::custom({
+            let background = self.code_background;
+            move |theme| style::code_block(theme, background)
+        }))
         .into()
     }
 

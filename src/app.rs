@@ -17,7 +17,7 @@ use cosmic::{Application, ApplicationExt, Element, action, theme};
 use crate::config::{self, Config};
 use crate::document::{self, CodeBlock, Document};
 use crate::fl;
-use crate::highlight::{self, SourceHighlighter};
+use crate::highlight::{self, SourceHighlighter, SyntaxTheme, ThemeKey};
 use crate::link::{self, Link};
 use crate::style;
 use crate::viewer::{DocViewer, Image};
@@ -86,10 +86,10 @@ pub enum Message {
         images: HashMap<markdown::Uri, Image>,
     },
     /// Code blocks of the document read by request `request` have been highlighted
-    /// for a dark (`dark == true`) or light theme.
+    /// with the syntax theme variant `key`.
     Highlighted {
         request: u64,
-        dark: bool,
+        key: ThemeKey,
         highlights: HashMap<u64, Vec<highlight::Line>>,
     },
     LinkClicked(markdown::Uri),
@@ -104,6 +104,8 @@ pub enum Message {
     /// The rendered/source switch in the header bar was used.
     ViewModeSelected(segmented_button::Entity),
     SetOpacityStep(u8),
+    /// Index into [`SyntaxTheme::ALL`].
+    SetSyntaxTheme(usize),
     /// The settings were changed on disk, e.g. by another instance.
     ConfigChanged(Config),
     /// Cursor movement, selection or scrolling in the source view.
@@ -281,10 +283,10 @@ impl Application for App {
             }
             Message::Highlighted {
                 request,
-                dark,
+                key,
                 highlights,
             } => {
-                if request == self.request && dark == self.dark {
+                if request == self.request && key == self.theme_key() {
                     self.highlights = highlights;
                 }
             }
@@ -325,10 +327,26 @@ impl Application for App {
                 self.save_config(config);
                 return self.apply_blur();
             }
+            Message::SetSyntaxTheme(index) => {
+                if let Some(&theme) = SyntaxTheme::ALL.get(index) {
+                    let config = Config {
+                        syntax_theme: theme,
+                        ..self.config.clone()
+                    };
+                    self.save_config(config);
+                    return self.highlight_code();
+                }
+            }
             Message::ConfigChanged(config) => {
                 if config != self.config {
+                    let rehighlight = config.syntax_theme != self.config.syntax_theme;
                     self.config = config;
-                    return self.apply_blur();
+                    let highlight = if rehighlight {
+                        self.highlight_code()
+                    } else {
+                        Task::none()
+                    };
+                    return Task::batch([self.apply_blur(), highlight]);
                 }
             }
             Message::SourceAction(action) => return self.source_action(action),
@@ -415,10 +433,10 @@ impl App {
             return Task::none();
         };
         let request = self.request;
-        let dark = self.dark;
+        let key = self.theme_key();
         let blocks = document::code_blocks(doc.content.items());
         let plain = Color::from(theme::active().cosmic().on_bg_component_color());
-        let work = tokio::task::spawn_blocking(move || highlight_blocks(&blocks, dark, plain));
+        let work = tokio::task::spawn_blocking(move || highlight_blocks(&blocks, key, plain));
         Task::perform(work, move |result| {
             let highlights = result.unwrap_or_else(|error| {
                 log::warn!("highlighting failed: {error}");
@@ -426,10 +444,18 @@ impl App {
             });
             action::app(Message::Highlighted {
                 request,
-                dark,
+                key,
                 highlights,
             })
         })
+    }
+
+    /// The syntax theme variant for the current settings and desktop mode.
+    fn theme_key(&self) -> ThemeKey {
+        ThemeKey {
+            theme: self.config.syntax_theme,
+            dark: self.dark,
+        }
     }
 
     /// Re-highlights code when the desktop switches between light and dark.
@@ -448,6 +474,7 @@ impl App {
         let viewer = DocViewer {
             images: &self.images,
             highlights: &self.highlights,
+            code_background: highlight::background(self.theme_key()),
         };
         let content = markdown::view_with(
             doc.content.items(),
@@ -508,7 +535,17 @@ impl App {
         let opacity = settings::item::builder(fl!("background-opacity"))
             .description(format!("{:.0} %", alpha * 100.0))
             .control(opacity);
-        let section = settings::section().title(fl!("appearance")).add(opacity);
+        let selected = SyntaxTheme::ALL
+            .iter()
+            .position(|&theme| theme == self.config.syntax_theme);
+        let syntax_theme = settings::item(
+            fl!("syntax-theme"),
+            widget::dropdown(&SyntaxTheme::NAMES, selected, Message::SetSyntaxTheme),
+        );
+        let section = settings::section()
+            .title(fl!("appearance"))
+            .add(opacity)
+            .add(syntax_theme);
         let about = button::standard(fl!("about")).on_press(Message::ShowAbout);
         widget::column::with_capacity(2)
             .push(section)
@@ -524,7 +561,8 @@ impl App {
             let result = self
                 .config
                 .set_translucent(handler, new.translucent)
-                .and_then(|_| self.config.set_blur_strength(handler, new.blur_strength));
+                .and_then(|_| self.config.set_blur_strength(handler, new.blur_strength))
+                .and_then(|_| self.config.set_syntax_theme(handler, new.syntax_theme));
             if let Err(error) = result {
                 log::warn!("cannot save settings: {error}");
             }
@@ -566,7 +604,7 @@ impl App {
         let spacing = theme::active().cosmic().spacing;
         text_editor(&doc.source)
             .on_action(Message::SourceAction)
-            .highlight_with::<SourceHighlighter>(self.dark, highlight::source_format)
+            .highlight_with::<SourceHighlighter>(self.theme_key(), highlight::source_format)
             .font(cosmic::font::mono())
             .padding([spacing.space_m, spacing.space_l])
             .height(Length::Fill)
@@ -675,14 +713,14 @@ fn shortcut(key: &Key, modifiers: Modifiers) -> Option<Message> {
 /// Highlights each code block, keyed by [`document::code_key`].
 fn highlight_blocks(
     blocks: &[CodeBlock],
-    dark: bool,
+    key: ThemeKey,
     plain: Color,
 ) -> HashMap<u64, Vec<highlight::Line>> {
     blocks
         .iter()
         .map(|(language, code)| {
             let language = language.as_deref();
-            let lines = highlight::highlight(code, language, dark, plain);
+            let lines = highlight::highlight(code, language, key, plain);
             (document::code_key(language, code), lines)
         })
         .collect()
@@ -827,16 +865,20 @@ mod tests {
         let mut app = app();
         app.loaded(path(), Ok("```rust\nfn a() {}\n```".into()));
         let highlights = HashMap::from([(1, Vec::new())]);
+        let light = ThemeKey {
+            dark: false,
+            ..app.theme_key()
+        };
         let _ = app.update(Message::Highlighted {
             request: app.request,
-            dark: false,
+            key: light,
             highlights: highlights.clone(),
         });
         assert!(app.highlights.is_empty());
 
         let _ = app.update(Message::Highlighted {
             request: app.request,
-            dark: true,
+            key: app.theme_key(),
             highlights,
         });
         assert_eq!(app.highlights.len(), 1);
@@ -845,7 +887,11 @@ mod tests {
     #[test]
     fn highlight_blocks_keys_by_language_and_code() {
         let blocks = vec![(Some("rust".to_owned()), "fn a() {}".to_owned())];
-        let highlights = highlight_blocks(&blocks, true, Color::WHITE);
+        let key = ThemeKey {
+            theme: SyntaxTheme::Cosmic,
+            dark: true,
+        };
+        let highlights = highlight_blocks(&blocks, key, Color::WHITE);
         let key = document::code_key(Some("rust"), "fn a() {}");
         assert_eq!(highlights[&key].len(), 1);
     }
@@ -920,6 +966,15 @@ mod tests {
         assert_eq!(app.mode(), ViewMode::Source);
         let _ = app.update(Message::ToggleSource);
         assert_eq!(app.mode(), ViewMode::Rendered);
+    }
+
+    #[test]
+    fn choosing_syntax_theme_updates_config() {
+        let mut app = app();
+        let _ = app.update(Message::SetSyntaxTheme(2));
+        assert_eq!(app.config.syntax_theme, SyntaxTheme::GruvboxMaterial);
+        let _ = app.update(Message::SetSyntaxTheme(99));
+        assert_eq!(app.config.syntax_theme, SyntaxTheme::GruvboxMaterial);
     }
 
     #[test]

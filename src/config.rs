@@ -5,6 +5,8 @@ use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::cosmic_theme::BlurStrength;
 use serde::{Deserialize, Serialize};
 
+use crate::highlight::SyntaxTheme;
+
 pub const CONFIG_VERSION: u64 = 1;
 
 #[derive(Clone, CosmicConfigEntry, Debug, Deserialize, PartialEq, Serialize)]
@@ -16,6 +18,8 @@ pub struct Config {
     /// turned into an opacity by the theme's alpha map, as COSMIC does for its own
     /// frosted surfaces.
     pub blur_strength: BlurStrength,
+    /// Colour theme for code; its light or dark variant follows the desktop.
+    pub syntax_theme: SyntaxTheme,
 }
 
 impl Default for Config {
@@ -23,6 +27,7 @@ impl Default for Config {
         Self {
             translucent: true,
             blur_strength: BlurStrength::VeryLow,
+            syntax_theme: SyntaxTheme::Cosmic,
         }
     }
 }

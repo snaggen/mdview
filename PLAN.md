@@ -43,6 +43,10 @@ unreadable on a light desktop. Instead:
   defaults COSMIC Text Editor uses. Chosen by `theme.cosmic().is_dark`, so they switch with the desktop.
 - Clear the syntect theme background (as cosmic-edit does) so the code block uses the COSMIC
   container colour.
+- Selectable in the settings (dropdown): COSMIC (default), GitHub, Gruvbox Material and Everforest
+  (medium contrast), each light/dark by desktop mode. The extra themes are converted from the
+  authors' MIT-licensed VS Code themes (`tools/vscode-to-tmtheme.py`, `res/syntax-themes/`); code
+  blocks use their own background so the colours keep their intended contrast.
 - `two-face` for the extended syntax set (TOML, Dockerfile, etc.), as cosmic-edit does.
 - Highlight all blocks in a background task on load and on light/dark switch, cached by a hash of
   (language, code). The libcosmic `highlighter` feature is not enabled, since its output is unused.

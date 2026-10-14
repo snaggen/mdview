@@ -17,11 +17,13 @@ pub fn markdown_settings(theme: &cosmic::Theme) -> markdown::Settings {
     }
 }
 
-/// Background of code blocks: the theme's component colour, with its corner radius.
-pub fn code_block(theme: &cosmic::Theme) -> container::Style {
+/// Background of code blocks: the syntax theme's own background if it has one,
+/// otherwise the COSMIC component colour, with the theme's corner radius.
+pub fn code_block(theme: &cosmic::Theme, background: Option<Color>) -> container::Style {
     let cosmic = theme.cosmic();
+    let background = background.unwrap_or_else(|| Color::from(cosmic.bg_component_color()));
     container::Style {
-        background: Some(Background::Color(Color::from(cosmic.bg_component_color()))),
+        background: Some(Background::Color(background)),
         text_color: Some(Color::from(cosmic.on_bg_component_color())),
         border: border::rounded(cosmic.corner_radii.radius_s),
         ..container::Style::default()

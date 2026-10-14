@@ -8,7 +8,8 @@ mdview path/to/file.md
 ```
 
 The view reloads when the file changes on disk. Code blocks are highlighted with the
-COSMIC syntax themes, and the settings let the document background be translucent.
+COSMIC syntax themes (or GitHub, Gruvbox Material or Everforest), and the settings let the
+document background be translucent.
 
 | Keys | Action |
 |---|---|

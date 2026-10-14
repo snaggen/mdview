@@ -56,6 +56,7 @@ cargo test --release --frozen --offline
 
 %files
 %license LICENSE LICENSE.dependencies
+%license res/syntax-themes/LICENSE.*
 %doc README.md
 %{_bindir}/%{name}
 %{_datadir}/applications/io.github.snaggen.MdView.desktop
