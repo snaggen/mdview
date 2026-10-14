@@ -44,7 +44,8 @@ unreadable on a light desktop. Instead:
 - Clear the syntect theme background (as cosmic-edit does) so the code block uses the COSMIC
   container colour.
 - `two-face` for the extended syntax set (TOML, Dockerfile, etc.), as cosmic-edit does.
-- Cache highlighted blocks per (block index, dark/light); re-highlight only on theme or file change.
+- Highlight all blocks in a background task on load and on light/dark switch, cached by a hash of
+  (language, code). The libcosmic `highlighter` feature is not enabled, since its output is unused.
 
 ### Window translucency (BlurStrength)
 
@@ -126,7 +127,7 @@ i18n/            fluent strings (en, sv)
 res/             .desktop, metainfo, icon, MIME association
 ```
 
-Dependencies: `libcosmic` (git, pinned rev; features `markdown`, `highlighter`, `wayland`,
+Dependencies: `libcosmic` (git, pinned rev; features `markdown`, `wayland`,
 `tokio`, `about`), `syntect`, `two-face`, `cosmic-syntax-theme` (git), `notify-debouncer-full`, `open`,
 `i18n-embed`/`rust-embed` (libcosmic template standard).
 

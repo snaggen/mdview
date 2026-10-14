@@ -15,8 +15,14 @@ open = "5"
 # Same version as libcosmic's markdown widget; only its `Alignment` type is used.
 pulldown-cmark = { version = "0.12", default-features = false }
 rust-embed = "8"
-tokio = { version = "1", features = ["fs"] }
+syntect = { version = "5.3", default-features = false, features = ["parsing", "plist-load", "regex-onig"] }
+tokio = { version = "1", features = ["fs", "rt"] }
+two-face = { version = "0.5", default-features = false, features = ["syntect-onig"] }
 url = "2"
+
+[dependencies.cosmic-syntax-theme]
+git = "https://github.com/pop-os/cosmic-syntax-theme.git"
+rev = "b1e1eb0234568911e59888f092dfc779c609b499"
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"

@@ -1,8 +1,10 @@
 //! Reading and parsing a Markdown document.
 
 use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 
+use cosmic::widget::markdown::{Bullet, Item};
 use cosmic::widget::{image, markdown, svg};
 
 use crate::link;
@@ -48,6 +50,47 @@ pub async fn read(path: PathBuf) -> (PathBuf, Result<String, String>) {
         .await
         .map_err(|error| error.to_string());
     (path, result)
+}
+
+/// A code block of the document: its fence language and its code.
+pub type CodeBlock = (Option<String>, String);
+
+/// All code blocks in `items`, including those nested in lists, quotes and tables.
+pub fn code_blocks(items: &[Item]) -> Vec<CodeBlock> {
+    let mut blocks = Vec::new();
+    collect_code_blocks(items, &mut blocks);
+    blocks
+}
+
+fn collect_code_blocks(items: &[Item], blocks: &mut Vec<CodeBlock>) {
+    for item in items {
+        match item {
+            Item::CodeBlock { language, code, .. } => blocks.push((language.clone(), code.clone())),
+            Item::List { bullets, .. } => {
+                for bullet in bullets {
+                    let (Bullet::Point { items } | Bullet::Task { items, .. }) = bullet;
+                    collect_code_blocks(items, blocks);
+                }
+            }
+            Item::Quote(items) => collect_code_blocks(items, blocks),
+            Item::Table { columns, rows } => {
+                for column in columns {
+                    collect_code_blocks(&column.header, blocks);
+                }
+                for cell in rows.iter().flat_map(|row| &row.cells) {
+                    collect_code_blocks(cell, blocks);
+                }
+            }
+            Item::Heading(..) | Item::Paragraph(_) | Item::Image { .. } | Item::Rule => {}
+        }
+    }
+}
+
+/// Key under which the highlighted lines of a code block are cached.
+pub fn code_key(language: Option<&str>, code: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    (language, code).hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Reads the local images referenced by a document. Remote images and files that
@@ -118,6 +161,22 @@ mod tests {
         assert!(matches!(images.get("a.svg"), Some(Image::Svg(_))));
         assert!(matches!(images.get("b.png"), Some(Image::Raster(_))));
         assert_eq!(images.len(), 2);
+    }
+
+    #[test]
+    fn code_blocks_are_found_when_nested() {
+        let source = "```rust\nfn a() {}\n```\n\n- item\n\n  ```\n  plain\n  ```\n\n> ```py\n> x = 1\n> ```\n";
+        let doc = Document::new(PathBuf::from("a.md"), source.into());
+        let blocks = code_blocks(doc.content.items());
+        let languages: Vec<_> = blocks.iter().map(|(lang, _)| lang.as_deref()).collect();
+        assert_eq!(languages, [Some("rust"), None, Some("py")]);
+    }
+
+    #[test]
+    fn code_key_depends_on_language_and_code() {
+        assert_eq!(code_key(Some("rs"), "x"), code_key(Some("rs"), "x"));
+        assert_ne!(code_key(Some("rs"), "x"), code_key(None, "x"));
+        assert_ne!(code_key(Some("rs"), "x"), code_key(Some("rs"), "y"));
     }
 
     #[test]

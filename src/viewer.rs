@@ -2,14 +2,18 @@
 
 use std::collections::HashMap;
 
-use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
-use cosmic::iced::widget::{rich_text, table};
+use cosmic::iced::font::{Style, Weight};
+use cosmic::iced::widget::{rich_text, scrollable, span, table, text};
+use cosmic::iced::{Font, Length};
 use cosmic::widget::markdown::{self, Item, Settings};
 use cosmic::widget::{self, image, svg};
 use cosmic::{Element, Renderer, Theme};
 
 use crate::app::Message;
+use crate::document::code_key;
+use crate::highlight;
+use crate::style;
 
 /// A decoded local image referenced by the document.
 #[derive(Debug, Clone)]
@@ -26,6 +30,9 @@ const MAX_COLUMN_WEIGHT: usize = 40;
 /// The [`markdown::Viewer`] used for the rendered document.
 pub struct DocViewer<'a> {
     pub images: &'a HashMap<markdown::Uri, Image>,
+    /// Highlighted code blocks, keyed by [`code_key`]. Blocks not highlighted yet are
+    /// shown as plain text.
+    pub highlights: &'a HashMap<u64, Vec<highlight::Line>>,
 }
 
 impl<'a> markdown::Viewer<'a, Message, Theme, Renderer> for DocViewer<'a> {
@@ -52,6 +59,41 @@ impl<'a> markdown::Viewer<'a, Message, Theme, Renderer> for DocViewer<'a> {
             .class(cosmic::theme::Container::Card)
             .into(),
         }
+    }
+
+    /// Code blocks use the COSMIC syntax themes (the default one is always dark) and
+    /// scroll sideways rather than wrapping.
+    fn code_block(
+        &self,
+        settings: Settings,
+        language: Option<&'a str>,
+        code: &'a str,
+        lines: &'a [markdown::Text],
+    ) -> Element<'a, Message> {
+        let font = settings.style.code_block_font;
+        let lines: Vec<Element<'a, Message>> = match self.highlights.get(&code_key(language, code))
+        {
+            Some(highlighted) => highlighted
+                .iter()
+                .map(|line| code_line(line_spans(line, font), settings))
+                .collect(),
+            None => lines
+                .iter()
+                .map(|line| code_line(line.spans(settings.style).to_vec(), settings))
+                .collect(),
+        };
+
+        widget::container(
+            scrollable(
+                widget::container(widget::column::with_children(lines)).padding(settings.code_size),
+            )
+            .direction(scrollable::Direction::Horizontal(
+                scrollable::Scrollbar::default(),
+            )),
+        )
+        .width(Length::Fill)
+        .class(cosmic::theme::Container::custom(style::code_block))
+        .into()
     }
 
     /// Tables span the page width and wrap their cells, instead of the default
@@ -86,6 +128,41 @@ impl<'a> markdown::Viewer<'a, Message, Theme, Renderer> for DocViewer<'a> {
             .separator_x(0)
             .into()
     }
+}
+
+/// One line of a code block.
+fn code_line<'a>(
+    spans: Vec<text::Span<'a, markdown::Uri>>,
+    settings: Settings,
+) -> Element<'a, Message> {
+    // An empty line would have no height, collapsing blank lines in the code.
+    let spans = if spans.is_empty() {
+        vec![span(" ")]
+    } else {
+        spans
+    };
+    rich_text(spans)
+        .font(settings.style.code_block_font)
+        .size(settings.code_size)
+        .into()
+}
+
+/// Turns highlighted spans into text spans in the code font.
+fn line_spans(line: &highlight::Line, font: Font) -> Vec<text::Span<'_, markdown::Uri>> {
+    line.iter()
+        .map(|s| {
+            let font = Font {
+                weight: if s.bold { Weight::Bold } else { Weight::Normal },
+                style: if s.italic {
+                    Style::Italic
+                } else {
+                    Style::Normal
+                },
+                ..font
+            };
+            span(s.text.as_str()).color(s.color).font(font)
+        })
+        .collect()
 }
 
 /// Relative widths for the columns of a table, from the longest text in each.

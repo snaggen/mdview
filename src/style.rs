@@ -1,5 +1,6 @@
 //! Markdown styling derived from the active COSMIC theme.
 
+use cosmic::iced::widget::container;
 use cosmic::iced::{Background, Color, border, padding};
 use cosmic::widget::markdown;
 
@@ -9,7 +10,22 @@ const TEXT_SIZE: f32 = 14.0;
 
 /// Rendering settings for the markdown widget, using the theme's fonts and colours.
 pub fn markdown_settings(theme: &cosmic::Theme) -> markdown::Settings {
-    markdown::Settings::with_text_size(TEXT_SIZE, markdown_style(theme))
+    markdown::Settings {
+        // The default (75% of the text size) is too small to read comfortably.
+        code_size: (TEXT_SIZE * 0.9).into(),
+        ..markdown::Settings::with_text_size(TEXT_SIZE, markdown_style(theme))
+    }
+}
+
+/// Background of code blocks: the theme's component colour, with its corner radius.
+pub fn code_block(theme: &cosmic::Theme) -> container::Style {
+    let cosmic = theme.cosmic();
+    container::Style {
+        background: Some(Background::Color(Color::from(cosmic.bg_component_color()))),
+        text_color: Some(Color::from(cosmic.on_bg_component_color())),
+        border: border::rounded(cosmic.corner_radii.radius_s),
+        ..container::Style::default()
+    }
 }
 
 /// The markdown widget's default style hard-codes a dark inline-code background,

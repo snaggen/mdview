@@ -2,6 +2,7 @@
 
 mod app;
 mod document;
+mod highlight;
 mod link;
 mod localize;
 mod style;

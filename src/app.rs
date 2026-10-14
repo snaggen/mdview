@@ -5,12 +5,13 @@ use std::path::PathBuf;
 
 use cosmic::app::{Core, Task};
 use cosmic::dialog::file_chooser::{self, FileFilter};
-use cosmic::iced::{Alignment, Length, Subscription};
+use cosmic::iced::{Alignment, Color, Length, Subscription};
 use cosmic::widget::{self, button, icon, markdown, tooltip};
 use cosmic::{Application, ApplicationExt, Element, action, theme};
 
-use crate::document::{self, Document};
+use crate::document::{self, CodeBlock, Document};
 use crate::fl;
+use crate::highlight;
 use crate::link::{self, Link};
 use crate::style;
 use crate::viewer::{DocViewer, Image};
@@ -61,6 +62,13 @@ pub enum Message {
         request: u64,
         images: HashMap<markdown::Uri, Image>,
     },
+    /// Code blocks of the document read by request `request` have been highlighted
+    /// for a dark (`dark == true`) or light theme.
+    Highlighted {
+        request: u64,
+        dark: bool,
+        highlights: HashMap<u64, Vec<highlight::Line>>,
+    },
     FileChanged,
     LinkClicked(markdown::Uri),
 }
@@ -75,6 +83,10 @@ pub struct App {
     reload_error: Option<String>,
     /// Local images of the open document, keyed by the URL written in the Markdown.
     images: HashMap<markdown::Uri, Image>,
+    /// Highlighted code blocks of the open document; see [`DocViewer::highlights`].
+    highlights: HashMap<u64, Vec<highlight::Line>>,
+    /// Whether the desktop uses a dark theme, which selects the syntax theme.
+    dark: bool,
 }
 
 impl Application for App {
@@ -99,6 +111,8 @@ impl Application for App {
             request: 0,
             reload_error: None,
             images: HashMap::new(),
+            highlights: HashMap::new(),
+            dark: theme::active().cosmic().is_dark,
         };
         let title = app.update_title();
         let open = match flags.path {
@@ -142,12 +156,25 @@ impl Application for App {
             } => {
                 if request == self.request {
                     self.loaded(path, result);
-                    return Task::batch([self.update_title(), self.load_images()]);
+                    return Task::batch([
+                        self.update_title(),
+                        self.load_images(),
+                        self.highlight_code(),
+                    ]);
                 }
             }
             Message::ImagesLoaded { request, images } => {
                 if request == self.request {
                     self.images = images;
+                }
+            }
+            Message::Highlighted {
+                request,
+                dark,
+                highlights,
+            } => {
+                if request == self.request && dark == self.dark {
+                    self.highlights = highlights;
                 }
             }
             Message::FileChanged => {
@@ -172,8 +199,24 @@ impl Application for App {
                 fl!("load-failed", path = document::display_name(path)),
                 error.clone(),
             ),
-            State::Loaded(doc) => rendered(doc, &self.images),
+            State::Loaded(doc) => self.rendered(doc),
         }
+    }
+
+    fn system_theme_update(
+        &mut self,
+        _keys: &[&'static str],
+        new_theme: &cosmic::cosmic_theme::Theme,
+    ) -> Task<Message> {
+        self.set_dark(new_theme.is_dark)
+    }
+
+    fn system_theme_mode_update(
+        &mut self,
+        _keys: &[&'static str],
+        new_theme: &cosmic::cosmic_theme::ThemeMode,
+    ) -> Task<Message> {
+        self.set_dark(new_theme.is_dark)
     }
 }
 
@@ -208,6 +251,64 @@ impl App {
             document::load_images(doc.base_dir().to_path_buf(), urls),
             move |images| action::app(Message::ImagesLoaded { request, images }),
         )
+    }
+
+    /// Starts highlighting the code blocks of the open document, off the UI thread.
+    /// Until it finishes, code blocks are shown without colours.
+    fn highlight_code(&self) -> Task<Message> {
+        let State::Loaded(doc) = &self.state else {
+            return Task::none();
+        };
+        let request = self.request;
+        let dark = self.dark;
+        let blocks = document::code_blocks(doc.content.items());
+        let plain = Color::from(theme::active().cosmic().on_bg_component_color());
+        let work = tokio::task::spawn_blocking(move || highlight_blocks(&blocks, dark, plain));
+        Task::perform(work, move |result| {
+            let highlights = result.unwrap_or_else(|error| {
+                log::warn!("highlighting failed: {error}");
+                HashMap::new()
+            });
+            action::app(Message::Highlighted {
+                request,
+                dark,
+                highlights,
+            })
+        })
+    }
+
+    /// Re-highlights code when the desktop switches between light and dark.
+    fn set_dark(&mut self, dark: bool) -> Task<Message> {
+        if dark == self.dark {
+            return Task::none();
+        }
+        self.dark = dark;
+        self.highlight_code()
+    }
+
+    /// The rendered document in a scrollable, centered column.
+    fn rendered<'a>(&'a self, doc: &'a Document) -> Element<'a, Message> {
+        let theme = theme::active();
+        let spacing = theme.cosmic().spacing;
+        let viewer = DocViewer {
+            images: &self.images,
+            highlights: &self.highlights,
+        };
+        let content = markdown::view_with(
+            doc.content.items(),
+            style::markdown_settings(&theme),
+            &viewer,
+        );
+
+        let column = widget::container(content)
+            .max_width(READABLE_WIDTH)
+            .padding([spacing.space_m, spacing.space_l]);
+        widget::scrollable(
+            widget::container(column)
+                .width(Length::Fill)
+                .center_x(Length::Fill),
+        )
+        .into()
     }
 
     /// Opens a clicked link: Markdown files in this window, everything else with the
@@ -261,29 +362,20 @@ impl App {
     }
 }
 
-/// The rendered document in a scrollable, centered column.
-fn rendered<'a>(
-    doc: &'a Document,
-    images: &'a HashMap<markdown::Uri, Image>,
-) -> Element<'a, Message> {
-    let theme = theme::active();
-    let spacing = theme.cosmic().spacing;
-    let viewer = DocViewer { images };
-    let content = markdown::view_with(
-        doc.content.items(),
-        style::markdown_settings(&theme),
-        &viewer,
-    );
-
-    let column = widget::container(content)
-        .max_width(READABLE_WIDTH)
-        .padding([spacing.space_m, spacing.space_l]);
-    widget::scrollable(
-        widget::container(column)
-            .width(Length::Fill)
-            .center_x(Length::Fill),
-    )
-    .into()
+/// Highlights each code block, keyed by [`document::code_key`].
+fn highlight_blocks(
+    blocks: &[CodeBlock],
+    dark: bool,
+    plain: Color,
+) -> HashMap<u64, Vec<highlight::Line>> {
+    blocks
+        .iter()
+        .map(|(language, code)| {
+            let language = language.as_deref();
+            let lines = highlight::highlight(code, language, dark, plain);
+            (document::code_key(language, code), lines)
+        })
+        .collect()
 }
 
 /// A centered icon, title, explanation and an "Open" button, used for the
@@ -370,6 +462,8 @@ mod tests {
             request: 0,
             reload_error: None,
             images: HashMap::new(),
+            highlights: HashMap::new(),
+            dark: true,
         }
     }
 
@@ -410,6 +504,34 @@ mod tests {
         app.loaded(path(), Ok("# Hello".into()));
         app.loaded(PathBuf::from("/docs/other.md"), Err("not found".into()));
         assert!(matches!(app.state, State::Failed { .. }));
+    }
+
+    #[test]
+    fn highlights_for_other_theme_are_ignored() {
+        let mut app = app();
+        app.loaded(path(), Ok("```rust\nfn a() {}\n```".into()));
+        let highlights = HashMap::from([(1, Vec::new())]);
+        let _ = app.update(Message::Highlighted {
+            request: app.request,
+            dark: false,
+            highlights: highlights.clone(),
+        });
+        assert!(app.highlights.is_empty());
+
+        let _ = app.update(Message::Highlighted {
+            request: app.request,
+            dark: true,
+            highlights,
+        });
+        assert_eq!(app.highlights.len(), 1);
+    }
+
+    #[test]
+    fn highlight_blocks_keys_by_language_and_code() {
+        let blocks = vec![(Some("rust".to_owned()), "fn a() {}".to_owned())];
+        let highlights = highlight_blocks(&blocks, true, Color::WHITE);
+        let key = document::code_key(Some("rust"), "fn a() {}");
+        assert_eq!(highlights[&key].len(), 1);
     }
 
     #[test]
