@@ -83,7 +83,8 @@ Implementation:
 
 Read-only `text_editor` showing the raw file, highlighted with the same syntect setup
 (`markdown` syntax) through a small `iced::advanced::text::Highlighter` implementation. Text is
-selectable and copyable. Edit actions are dropped in `update`. Monospace font from the theme.
+selectable and copyable; the selection is also written to the PRIMARY selection for middle-click
+paste. Edit actions are dropped in `update`. Monospace font from the theme.
 
 ### Live reload
 

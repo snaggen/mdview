@@ -130,6 +130,8 @@ pub struct App {
     config_handler: Option<cosmic::cosmic_config::Config>,
     context_page: ContextPage,
     about: About,
+    /// The text last written to the PRIMARY selection.
+    primary: String,
 }
 
 impl Application for App {
@@ -167,6 +169,7 @@ impl Application for App {
             config_handler,
             context_page: ContextPage::Settings,
             about: about(),
+            primary: String::new(),
         };
         let title = app.update_title();
         let open = match flags.path {
@@ -328,14 +331,7 @@ impl Application for App {
                     return self.apply_blur();
                 }
             }
-            Message::SourceAction(action) => {
-                // The source view is read-only: apply everything except edits.
-                if let State::Loaded(doc) = &mut self.state
-                    && !action.is_edit()
-                {
-                    doc.source.perform(action);
-                }
-            }
+            Message::SourceAction(action) => return self.source_action(action),
         }
         Task::none()
     }
@@ -526,6 +522,26 @@ impl App {
             }
         }
         self.config = new;
+    }
+
+    /// Applies cursor movement, selection and scrolling in the read-only source view,
+    /// and puts selected text on the PRIMARY selection for middle-click pasting.
+    fn source_action(&mut self, action: text_editor::Action) -> Task<Message> {
+        let State::Loaded(doc) = &mut self.state else {
+            return Task::none();
+        };
+        if action.is_edit() {
+            return Task::none();
+        }
+        doc.source.perform(action);
+        match doc.source.selection() {
+            // Dragging produces an action per mouse move; only write when it changes.
+            Some(selection) if selection != self.primary => {
+                self.primary.clone_from(&selection);
+                cosmic::iced::clipboard::write_primary(selection)
+            }
+            _ => Task::none(),
+        }
     }
 
     /// Whether the rendered document or its source is shown.
@@ -753,6 +769,7 @@ mod tests {
             config_handler: None,
             context_page: ContextPage::Settings,
             about: about(),
+            primary: String::new(),
         }
     }
 
@@ -839,6 +856,7 @@ mod tests {
         };
         assert_eq!(doc.source.text(), "# Hello");
         assert_eq!(doc.source.selection().as_deref(), Some("# Hello"));
+        assert_eq!(app.primary, "# Hello");
     }
 
     #[test]
