@@ -1,0 +1,35 @@
+[package]
+name = "mdview"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+description = "A simple Markdown viewer for the COSMIC desktop"
+
+[dependencies]
+env_logger = "0.11"
+i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester"] }
+i18n-embed-fl = "0.10"
+log = "0.4"
+rust-embed = "8"
+tokio = { version = "1", features = ["fs"] }
+
+[dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic.git"
+rev = "5a8bd9482a35ae94c1e54edf77b331c6b970f170"
+default-features = false
+features = [
+    "about",
+    "dbus-config",
+    "markdown",
+    "multi-window",
+    "tokio",
+    "wayland",
+    "winit",
+    "xdg-portal",
+]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["fs", "macros", "rt"] }
+
+[profile.release]
+lto = "thin"

@@ -1,4 +1,4 @@
-# md-viewer — plan
+# mdview — plan
 
 A simple Markdown viewer for the COSMIC desktop. Opens a `.md` file and renders it
 natively, following the system theme. No editing, no tabs, no plugins.

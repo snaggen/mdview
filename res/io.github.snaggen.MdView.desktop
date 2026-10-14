@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Markdown Viewer
+Name[sv]=Markdown-visare
+Comment=View Markdown documents
+Comment[sv]=Visa Markdown-dokument
+Exec=mdview %f
+Icon=io.github.snaggen.MdView
+Terminal=false
+Type=Application
+Categories=Utility;Viewer;TextTools;
+MimeType=text/markdown;text/x-markdown;
+Keywords=markdown;md;viewer;readme;
+StartupNotify=true
