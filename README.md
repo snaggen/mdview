@@ -28,4 +28,20 @@ just prefix=/usr/local install
 just check            # fmt, clippy, tests
 ```
 
-See [PLAN.md](PLAN.md) for the design.
+To make mdview the default application for Markdown files: `just set-default`.
+
+## Fedora RPM
+
+The package builds offline from vendored crates, so it also works in mock and COPR.
+
+```sh
+just rpm      # binary RPM in target/rpm/
+just srpm     # source RPM, e.g. for COPR
+```
+
+`dist` packs the committed `HEAD`, so commit before building. When dependencies change, update
+the spec's License tag with `packaging/dependency-licenses.py --spec`.
+
+## License
+
+EUPL-1.2. See [PLAN.md](PLAN.md) for the design.

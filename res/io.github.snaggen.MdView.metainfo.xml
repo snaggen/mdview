@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.snaggen.MdView</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>EUPL-1.2</project_license>
+  <name>Markdown Viewer</name>
+  <name xml:lang="sv">Markdown-visare</name>
+  <summary>View Markdown documents</summary>
+  <summary xml:lang="sv">Visa Markdown-dokument</summary>
+  <developer id="io.github.snaggen">
+    <name>Mattias Eriksson</name>
+  </developer>
+  <description>
+    <p>
+      A simple Markdown viewer for the COSMIC desktop. Colours, fonts and light or dark
+      mode follow the system theme.
+    </p>
+    <ul>
+      <li>Tables, task lists, quotes, images and syntax-highlighted code</li>
+      <li>Reloads when the file changes on disk</li>
+      <li>Read-only source view with selection and copy</li>
+      <li>Adjustable background opacity</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.snaggen.MdView.desktop</launchable>
+  <provides>
+    <binary>mdview</binary>
+    <mediatype>text/markdown</mediatype>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-14"/>
+  </releases>
+</component>
