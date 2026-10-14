@@ -36,6 +36,9 @@ features = [
     "multi-window",
     "tokio",
     "wayland",
+    # GPU rendering; without it iced falls back to tiny-skia on the CPU, which
+    # makes scrolling sluggish.
+    "wgpu",
     "winit",
     "xdg-portal",
 ]
