@@ -341,7 +341,15 @@ impl Application for App {
         let alpha = self.config.content_alpha(theme.cosmic());
         let window = &self.core.window;
         let radius = style::window_radius(&theme, window.sharp_corners || window.is_maximized);
+        // The window's resize area extends into the window along its edges. libcosmic's
+        // content container keeps content out of it with this padding; that container
+        // is disabled (see `init`), so pad here, inside our own background. Otherwise
+        // the scrollbar sits in the resize area and cannot be dragged.
+        let edge = window
+            .border_padding
+            .unwrap_or(if window.is_maximized { 8 } else { 7 });
         widget::container(self.content())
+            .padding([0, edge, edge, edge])
             .width(Length::Fill)
             .height(Length::Fill)
             .class(theme::Container::custom(move |theme| {
