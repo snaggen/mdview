@@ -23,9 +23,9 @@
   <rect x="30" y="64" width="40" height="5" rx="2.5" fill="#a7b2be"/>
   <!-- Stylized eye -->
   <!-- Eye: rounded almond outline, iris ring, pupil with a highlight -->
-  <path d="M42 92C52 76 64 69 78 69C92 69 104 76 114 92C104 108 92 115 78 115C64 115 52 108 42 92Z"
-        fill="url(#white)" stroke="#4f5c69" stroke-width="5" stroke-linejoin="round"/>
-  <circle cx="78" cy="92" r="16" fill="#ffffff" stroke="#1f8fa3" stroke-width="5"/>
-  <circle cx="78" cy="92" r="8" fill="#176f80"/>
-  <circle cx="75" cy="89" r="2.6" fill="#ffffff"/>
+  <path d="M52 94C60 81 70 76 80 76C90 76 100 81 108 94C100 107 90 112 80 112C70 112 60 107 52 94Z"
+        fill="url(#white)" stroke="#1f8fa3" stroke-width="4" stroke-linejoin="round"/>
+  <circle cx="80" cy="94" r="12" fill="#ffffff" stroke="#1f8fa3" stroke-width="4"/>
+  <circle cx="80" cy="94" r="6" fill="#176f80"/>
+  <circle cx="77.8" cy="91.8" r="2" fill="#ffffff"/>
 </svg>
