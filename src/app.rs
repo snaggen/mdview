@@ -9,7 +9,9 @@ use cosmic::iced::keyboard::{Key, Modifiers};
 use cosmic::iced::widget::text_editor;
 use cosmic::iced::{Alignment, Color, Event, Length, Subscription, event, keyboard};
 use cosmic::widget::about::About;
-use cosmic::widget::{self, button, icon, markdown, settings, tooltip};
+use cosmic::widget::{
+    self, button, icon, markdown, segmented_button, segmented_control, settings, tooltip,
+};
 use cosmic::{Application, ApplicationExt, Element, action, theme};
 
 use crate::config::{self, Config};
@@ -40,6 +42,13 @@ pub struct Flags {
 enum ContextPage {
     Settings,
     About,
+}
+
+/// How the open document is shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ViewMode {
+    Rendered,
+    Source,
 }
 
 /// What the content area currently shows.
@@ -92,8 +101,9 @@ pub enum Message {
     /// Re-read the open file: on request, or because it changed on disk.
     Reload,
     Quit,
-    SetTranslucent(bool),
-    SetBlurLevel(u8),
+    /// The rendered/source switch in the header bar was used.
+    ViewModeSelected(segmented_button::Entity),
+    SetOpacityStep(u8),
     /// The settings were changed on disk, e.g. by another instance.
     ConfigChanged(Config),
     /// Cursor movement, selection or scrolling in the source view.
@@ -114,8 +124,8 @@ pub struct App {
     highlights: HashMap<u64, Vec<highlight::Line>>,
     /// Whether the desktop uses a dark theme, which selects the syntax theme.
     dark: bool,
-    /// Show the Markdown source instead of the rendered document.
-    show_source: bool,
+    /// The rendered/source switch; its items carry a [`ViewMode`].
+    view_mode: segmented_button::SingleSelectModel,
     config: Config,
     config_handler: Option<cosmic::cosmic_config::Config>,
     context_page: ContextPage,
@@ -152,7 +162,7 @@ impl Application for App {
             images: HashMap::new(),
             highlights: HashMap::new(),
             dark: theme::active().cosmic().is_dark,
-            show_source: false,
+            view_mode: view_mode_model(),
             config,
             config_handler,
             context_page: ContextPage::Settings,
@@ -167,6 +177,25 @@ impl Application for App {
         (app, Task::batch([title, open, blur]))
     }
 
+    fn header_start(&self) -> Vec<Element<'_, Message>> {
+        vec![
+            button::text(fl!("open"))
+                .on_press(Message::OpenDialog)
+                .into(),
+        ]
+    }
+
+    fn header_center(&self) -> Vec<Element<'_, Message>> {
+        if !matches!(self.state, State::Loaded(_)) {
+            return Vec::new();
+        }
+        vec![
+            segmented_control::horizontal(&self.view_mode)
+                .on_activate(Message::ViewModeSelected)
+                .into(),
+        ]
+    }
+
     fn header_end(&self) -> Vec<Element<'_, Message>> {
         let mut items = Vec::new();
         if let Some(error) = &self.reload_error {
@@ -175,22 +204,6 @@ impl Application for App {
                 error = error.as_str()
             )));
         }
-        if matches!(self.state, State::Loaded(_)) {
-            items.push(if self.show_source {
-                icon_button(
-                    "document-print-preview-symbolic",
-                    fl!("show-rendered"),
-                    Message::ToggleSource,
-                )
-            } else {
-                icon_button("markup-symbolic", fl!("show-source"), Message::ToggleSource)
-            });
-        }
-        items.push(icon_button(
-            "document-open-symbolic",
-            fl!("open-file"),
-            Message::OpenDialog,
-        ));
         items.push(icon_button(
             "preferences-system-symbolic",
             fl!("settings"),
@@ -273,7 +286,14 @@ impl Application for App {
                 }
             }
             Message::LinkClicked(url) => return self.follow_link(&url),
-            Message::ToggleSource => self.show_source = !self.show_source,
+            Message::ToggleSource => {
+                let next = match self.mode() {
+                    ViewMode::Rendered => ViewMode::Source,
+                    ViewMode::Source => ViewMode::Rendered,
+                };
+                self.view_mode.activate_position(next as u16);
+            }
+            Message::ViewModeSelected(entity) => self.view_mode.activate(entity),
             Message::ToggleSettings => {
                 // Closes the drawer, or opens it on the settings page.
                 let show =
@@ -296,23 +316,11 @@ impl Application for App {
                     return cosmic::iced::window::close(id);
                 }
             }
-            Message::SetTranslucent(translucent) => {
-                if let Some(handler) = &self.config_handler
-                    && let Err(error) = self.config.set_translucent(handler, translucent)
-                {
-                    log::warn!("cannot save setting: {error}");
-                }
-                self.config.translucent = translucent;
+            Message::SetOpacityStep(step) => {
+                let mut config = self.config.clone();
+                config.set_opacity_step(step);
+                self.save_config(config);
                 return self.apply_blur();
-            }
-            Message::SetBlurLevel(level) => {
-                let strength = config::blur_strength(level);
-                if let Some(handler) = &self.config_handler
-                    && let Err(error) = self.config.set_blur_strength(handler, strength)
-                {
-                    log::warn!("cannot save setting: {error}");
-                }
-                self.config.blur_strength = strength;
             }
             Message::ConfigChanged(config) => {
                 if config != self.config {
@@ -467,7 +475,7 @@ impl App {
                 fl!("load-failed", path = document::display_name(path)),
                 error.clone(),
             ),
-            State::Loaded(doc) if self.show_source => self.source(doc),
+            State::Loaded(doc) if self.mode() == ViewMode::Source => self.source(doc),
             State::Loaded(doc) => self.rendered(doc),
         }
     }
@@ -487,23 +495,45 @@ impl App {
 
     /// The settings shown in the context drawer.
     fn settings_view(&self) -> Element<'_, Message> {
-        let translucent = settings::item::builder(fl!("translucent-background"))
-            .description(fl!("translucent-background-desc"))
-            .toggler(self.config.translucent, Message::SetTranslucent);
-        let mut section = settings::section()
-            .title(fl!("appearance"))
-            .add(translucent);
-        if self.config.translucent {
-            let level = config::blur_level(self.config.blur_strength);
-            let slider = widget::slider(0..=config::BLUR_LEVELS - 1, level, Message::SetBlurLevel);
-            section = section.add(settings::item(fl!("blur-strength"), slider));
-        }
+        let alpha = self.config.content_alpha(theme::active().cosmic());
+        let opacity = widget::slider(
+            0..=config::MAX_OPACITY_STEP,
+            self.config.opacity_step(),
+            Message::SetOpacityStep,
+        );
+        let opacity = settings::item::builder(fl!("background-opacity"))
+            .description(format!("{:.0} %", alpha * 100.0))
+            .control(opacity);
+        let section = settings::section().title(fl!("appearance")).add(opacity);
         let about = button::standard(fl!("about")).on_press(Message::ShowAbout);
         widget::column::with_capacity(2)
             .push(section)
             .push(about)
             .spacing(theme::active().cosmic().spacing.space_m)
             .into()
+    }
+
+    /// Applies new settings and writes the changed ones to disk; failures only cost
+    /// persistence.
+    fn save_config(&mut self, new: Config) {
+        if let Some(handler) = &self.config_handler {
+            let result = self
+                .config
+                .set_translucent(handler, new.translucent)
+                .and_then(|_| self.config.set_blur_strength(handler, new.blur_strength));
+            if let Err(error) = result {
+                log::warn!("cannot save settings: {error}");
+            }
+        }
+        self.config = new;
+    }
+
+    /// Whether the rendered document or its source is shown.
+    fn mode(&self) -> ViewMode {
+        self.view_mode
+            .active_data::<ViewMode>()
+            .copied()
+            .unwrap_or(ViewMode::Rendered)
     }
 
     /// The Markdown source in a read-only, highlighted text editor, where text can be
@@ -571,6 +601,14 @@ impl App {
             None => Task::none(),
         }
     }
+}
+
+/// Items of the rendered/source switch, in [`ViewMode`] order.
+fn view_mode_model() -> segmented_button::SingleSelectModel {
+    segmented_button::Model::builder()
+        .insert(|b| b.text(fl!("rendered")).data(ViewMode::Rendered).activate())
+        .insert(|b| b.text(fl!("source")).data(ViewMode::Source))
+        .build()
 }
 
 /// The about page, shown in the context drawer.
@@ -710,7 +748,7 @@ mod tests {
             images: HashMap::new(),
             highlights: HashMap::new(),
             dark: true,
-            show_source: false,
+            view_mode: view_mode_model(),
             config: Config::default(),
             config_handler: None,
             context_page: ContextPage::Settings,
@@ -790,7 +828,7 @@ mod tests {
         let mut app = app();
         app.loaded(path(), Ok("# Hello".into()));
         let _ = app.update(Message::ToggleSource);
-        assert!(app.show_source);
+        assert_eq!(app.mode(), ViewMode::Source);
 
         let edit = text_editor::Action::Edit(text_editor::Edit::Insert('x'));
         let _ = app.update(Message::SourceAction(edit));
@@ -806,9 +844,10 @@ mod tests {
     #[test]
     fn settings_update_config() {
         let mut app = app();
-        let _ = app.update(Message::SetTranslucent(false));
+        let _ = app.update(Message::SetOpacityStep(config::MAX_OPACITY_STEP));
         assert!(!app.config.translucent);
-        let _ = app.update(Message::SetBlurLevel(6));
+        let _ = app.update(Message::SetOpacityStep(7));
+        assert!(app.config.translucent);
         assert_eq!(
             app.config.blur_strength,
             cosmic::cosmic_theme::BlurStrength::Medium
@@ -843,6 +882,16 @@ mod tests {
         assert_eq!(app.context_page, ContextPage::Settings);
         let _ = app.update(Message::ToggleSettings);
         assert!(!app.core.window.show_context);
+    }
+
+    #[test]
+    fn toggle_source_switches_back_and_forth() {
+        let mut app = app();
+        assert_eq!(app.mode(), ViewMode::Rendered);
+        let _ = app.update(Message::ToggleSource);
+        assert_eq!(app.mode(), ViewMode::Source);
+        let _ = app.update(Message::ToggleSource);
+        assert_eq!(app.mode(), ViewMode::Rendered);
     }
 
     #[test]

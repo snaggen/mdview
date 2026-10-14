@@ -71,7 +71,9 @@ Implementation:
   opaque. Bottom corners follow the window radius. No theme rebuild, so accent and light/dark
   changes keep working untouched.
 - Settings: `translucent: bool` (default on) and `blur_strength: BlurStrength` (default
-  **`VeryLow`**, alpha ≈ 0.85 with the default alpha map), shown as a toggle and a 14-step slider.
+  **`VeryLow`**, alpha ≈ 0.85 with the default alpha map), shown as one "Background opacity"
+  slider like cosmic-term's: the 14 strengths from most to least translucent, then fully opaque,
+  with the resulting opacity in percent as description.
 - libcosmic only requests compositor blur when the system has frosted windows on. The app requests
   it itself (`window::enable_blur`) whenever the content is translucent, and releases it only when
   neither the content nor the system theme is translucent.
@@ -101,13 +103,11 @@ selectable and copyable. Edit actions are dropped in `update`. Monospace font fr
 
 ## UI (COSMIC patterns)
 
-- Single primary view, no nav bar. Header bar: file name as title; end: toggle
-  Rendered/Source (icon button, `text-x-generic-symbolic` / `view-reveal-symbolic`), open file,
-  settings.
+- Single primary view, no nav bar. Header bar: start: "Open" text button; center: a
+  "Rendered | Source" segmented control (when a document is open); end: settings icon button.
 - Content: scrollable, centered column with a max readable width (theme spacing tokens, no raw
   numbers). The rendered view uses `markdown::Settings` derived from the theme's font sizes.
-- Settings: context drawer with an "Appearance" section: "Translucent background" toggle and a
-  translucency slider (hidden when opaque).
+- Settings: context drawer with an "Appearance" section holding the background opacity slider.
 - Empty state (no file): centered icon + "Open a Markdown file" + suggested button.
 - Error state (unreadable file): message in the content area, not a panic.
 - Keys: `Ctrl+O` open, `Ctrl+U` toggle source, `Ctrl+,` settings, `Ctrl+R` reload, `Ctrl+Q` quit.
