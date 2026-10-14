@@ -634,6 +634,8 @@ fn about() -> About {
         .icon(icon::from_name(App::APP_ID))
         .version(env!("CARGO_PKG_VERSION"))
         .comments(fl!("app-description"))
+        .license("EUPL-1.2")
+        .links([(fl!("repository"), env!("CARGO_PKG_REPOSITORY"))])
 }
 
 /// The application action bound to a key press, if any.

@@ -7,6 +7,7 @@ Summary:        Simple Markdown viewer for the COSMIC desktop
 # licenses are listed per crate in LICENSE.dependencies; regenerate this tag with
 # packaging/dependency-licenses.py --spec when dependencies change.
 License:        EUPL-1.2 AND ((MIT OR Apache-2.0) AND Unicode-3.0) AND (0BSD OR Apache-2.0 OR MIT) AND Apache-2.0 AND (Apache-2.0 AND MIT) AND (Apache-2.0 OR BSD-2-Clause OR MIT) AND (Apache-2.0 OR BSD-3-Clause) AND (Apache-2.0 OR GPL-2.0-only) AND (Apache-2.0 OR MIT) AND (Apache-2.0 OR MIT OR Zlib) AND (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT) AND BSD-2-Clause AND BSD-3-Clause AND CC0-1.0 AND ISC AND (LGPL-3.0-or-later OR MIT) AND MIT AND (MIT OR Unlicense) AND MPL-2.0 AND Unicode-3.0 AND Unlicense AND Zlib
+URL:            https://github.com/snaggen/mdview
 
 # Created by `just dist` and `just vendor`.
 Source0:        %{name}-%{version}.tar.gz

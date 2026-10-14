@@ -22,6 +22,8 @@
       <li>Adjustable background opacity</li>
     </ul>
   </description>
+  <url type="homepage">https://github.com/snaggen/mdview</url>
+  <url type="bugtracker">https://github.com/snaggen/mdview/issues</url>
   <launchable type="desktop-id">io.github.snaggen.MdView.desktop</launchable>
   <provides>
     <binary>mdview</binary>

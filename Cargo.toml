@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.90"
 description = "A simple Markdown viewer for the COSMIC desktop"
 license = "EUPL-1.2"
+repository = "https://github.com/snaggen/mdview"
 
 [dependencies]
 env_logger = "0.11"

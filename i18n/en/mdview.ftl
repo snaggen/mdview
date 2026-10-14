@@ -13,3 +13,4 @@ appearance = Appearance
 background-opacity = Background opacity
 app-description = A simple Markdown viewer for the COSMIC desktop.
 about = About
+repository = Repository
