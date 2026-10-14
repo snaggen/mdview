@@ -7,9 +7,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::highlight::SyntaxTheme;
 
-pub const CONFIG_VERSION: u64 = 1;
-
+/// Stored under `v1/`. The version must be set with this attribute: the config
+/// watcher reads it from `Config::VERSION`, which otherwise defaults to 0, so the
+/// watcher would see an empty `v0/` and replace the loaded settings with defaults.
 #[derive(Clone, CosmicConfigEntry, Debug, Deserialize, PartialEq, Serialize)]
+#[version = 1]
 #[serde(default)]
 pub struct Config {
     /// Whether the content area lets the blurred desktop show through.
@@ -35,7 +37,7 @@ impl Default for Config {
 impl Config {
     /// Loads the settings, falling back to defaults for anything missing or invalid.
     pub fn load(app_id: &str) -> (Option<cosmic_config::Config>, Self) {
-        match cosmic_config::Config::new(app_id, CONFIG_VERSION) {
+        match cosmic_config::Config::new(app_id, Self::VERSION) {
             Ok(handler) => {
                 let config = Self::get_entry(&handler).unwrap_or_else(|(errors, config)| {
                     log::warn!("errors loading config: {errors:?}");
@@ -92,6 +94,12 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_matches_stored_settings() {
+        // Settings of earlier releases are stored under v1/.
+        assert_eq!(Config::VERSION, 1);
+    }
 
     #[test]
     fn default_is_translucent_very_low() {
