@@ -82,14 +82,15 @@ selectable and copyable. Edit actions are dropped in `update`. Monospace font fr
 
 ### Live reload
 
-- `notify` (inotify) watching the file's **parent directory**, filtered on the file name. Editors
+- `notify-debouncer-full` (inotify, from the notify project) watching the file's **parent directory**, filtered on the file name. Editors
   often save by writing a temp file and renaming it over the original, which a watch on the file
   itself loses after the first save.
 - Exposed as an iced `Subscription` keyed on the path, so opening another file swaps the watcher.
-- Debounce (~150 ms) to coalesce write bursts, then re-read and re-parse off the UI thread
-  (`Task::perform`); applies to both the rendered and the source view.
-- Keep the scroll position (relative offset) across reloads, so editing in another window does
-  not jump the viewer back to the top.
+- Debounce (~150 ms) to coalesce write bursts, then re-read off the UI thread
+  (`Task::perform`); applies to both the rendered and the source view. Reads carry a request id
+  so a late result never overwrites a newer one.
+- The scroll position is kept across reloads: the scrollable's widget state survives because the
+  widget tree keeps its shape, so editing in another window does not jump back to the top.
 - File removed: keep showing the last content with a notice in the header; resume if the file
   reappears (rename-save). Read errors mid-save (truncated or partial file) are retried on the
   next event instead of replacing the view with an error.
@@ -125,7 +126,7 @@ res/             .desktop, metainfo, icon, MIME association
 ```
 
 Dependencies: `libcosmic` (git, pinned rev; features `markdown`, `highlighter`, `wayland`,
-`tokio`, `about`), `syntect`, `two-face`, `cosmic-syntax-theme` (git), `notify`, `open`,
+`tokio`, `about`), `syntect`, `two-face`, `cosmic-syntax-theme` (git), `notify-debouncer-full`, `open`,
 `i18n-embed`/`rust-embed` (libcosmic template standard).
 
 Pure logic (path resolution, link classification, translucency → alpha, highlighting into

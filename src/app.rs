@@ -4,13 +4,14 @@ use std::path::PathBuf;
 
 use cosmic::app::{Core, Task};
 use cosmic::dialog::file_chooser::{self, FileFilter};
-use cosmic::iced::{Alignment, Length};
+use cosmic::iced::{Alignment, Length, Subscription};
 use cosmic::widget::{self, button, icon, markdown, tooltip};
 use cosmic::{Application, ApplicationExt, Element, action, theme};
 
 use crate::document::{self, Document};
 use crate::fl;
 use crate::style;
+use crate::watch;
 
 /// Maximum width of the document column, so lines stay readable in wide windows.
 const READABLE_WIDTH: f32 = 860.0;
@@ -30,17 +31,40 @@ enum State {
     Failed { path: PathBuf, error: String },
 }
 
+impl State {
+    /// The file being shown, if any.
+    fn path(&self) -> Option<&PathBuf> {
+        match self {
+            State::Empty => None,
+            State::Loaded(doc) => Some(&doc.path),
+            State::Failed { path, .. } => Some(path),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     OpenDialog,
     Open(PathBuf),
-    Loaded(PathBuf, Result<String, String>),
+    /// A read finished. `request` identifies the read, so results that arrive out
+    /// of order (e.g. a reload finishing after another file was opened) are dropped.
+    Loaded {
+        request: u64,
+        path: PathBuf,
+        result: Result<String, String>,
+    },
+    FileChanged,
     LinkClicked(markdown::Uri),
 }
 
 pub struct App {
     core: Core,
     state: State,
+    /// Id of the most recent read; see [`Message::Loaded`].
+    request: u64,
+    /// Set when re-reading the open document failed (e.g. it was deleted). The last
+    /// good content stays visible and the next change on disk retries.
+    reload_error: Option<String>,
 }
 
 impl Application for App {
@@ -62,6 +86,8 @@ impl Application for App {
         let mut app = Self {
             core,
             state: State::Empty,
+            request: 0,
+            reload_error: None,
         };
         let title = app.update_title();
         let open = match flags.path {
@@ -72,23 +98,46 @@ impl Application for App {
     }
 
     fn header_end(&self) -> Vec<Element<'_, Message>> {
-        vec![icon_button(
+        let mut items = Vec::new();
+        if let Some(error) = &self.reload_error {
+            items.push(warning_indicator(fl!(
+                "reload-failed",
+                error = error.as_str()
+            )));
+        }
+        items.push(icon_button(
             "document-open-symbolic",
             fl!("open-file"),
             Message::OpenDialog,
-        )]
+        ));
+        items
+    }
+
+    fn subscription(&self) -> Subscription<Message> {
+        match self.state.path() {
+            Some(path) => watch::subscription(path.clone()).map(|()| Message::FileChanged),
+            None => Subscription::none(),
+        }
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::OpenDialog => return open_dialog(),
             Message::Open(path) => return self.open(path),
-            Message::Loaded(path, result) => {
-                self.state = match result {
-                    Ok(source) => State::Loaded(Document::new(path, source)),
-                    Err(error) => State::Failed { path, error },
-                };
-                return self.update_title();
+            Message::Loaded {
+                request,
+                path,
+                result,
+            } => {
+                if request == self.request {
+                    self.loaded(path, result);
+                    return self.update_title();
+                }
+            }
+            Message::FileChanged => {
+                if let Some(path) = self.state.path() {
+                    return self.read(path.clone());
+                }
             }
             Message::LinkClicked(url) => log::debug!("link clicked: {url}"),
         }
@@ -113,11 +162,41 @@ impl Application for App {
 }
 
 impl App {
-    /// Starts reading `path` in the background.
+    /// Opens `path`, replacing the current document once it has been read.
     fn open(&mut self, path: PathBuf) -> Task<Message> {
-        Task::perform(document::read(path), |(path, result)| {
-            action::app(Message::Loaded(path, result))
+        self.read(path)
+    }
+
+    /// Starts reading `path` in the background.
+    fn read(&mut self, path: PathBuf) -> Task<Message> {
+        self.request += 1;
+        let request = self.request;
+        Task::perform(document::read(path), move |(path, result)| {
+            action::app(Message::Loaded {
+                request,
+                path,
+                result,
+            })
         })
+    }
+
+    /// Applies a finished read.
+    ///
+    /// A failed re-read of the open document keeps its last content, since editors
+    /// briefly remove or truncate files while saving.
+    fn loaded(&mut self, path: PathBuf, result: Result<String, String>) {
+        let is_reload = matches!(&self.state, State::Loaded(doc) if doc.path == path);
+        match result {
+            Ok(source) => {
+                self.state = State::Loaded(Document::new(path, source));
+                self.reload_error = None;
+            }
+            Err(error) if is_reload => self.reload_error = Some(error),
+            Err(error) => {
+                self.state = State::Failed { path, error };
+                self.reload_error = None;
+            }
+        }
     }
 
     /// Sets header bar and window title from the open document.
@@ -184,6 +263,16 @@ fn icon_button<'a>(
     .into()
 }
 
+/// A warning icon in the header bar, explaining itself in a tooltip.
+fn warning_indicator<'a>(message: String) -> Element<'a, Message> {
+    tooltip(
+        icon::from_name("dialog-warning-symbolic").size(16),
+        widget::text::body(message),
+        tooltip::Position::Bottom,
+    )
+    .into()
+}
+
 /// Shows the portal's file chooser filtered on Markdown files.
 fn open_dialog() -> Task<Message> {
     cosmic::task::future(async {
@@ -206,4 +295,71 @@ fn open_dialog() -> Task<Message> {
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app() -> App {
+        App {
+            core: Core::default(),
+            state: State::Empty,
+            request: 0,
+            reload_error: None,
+        }
+    }
+
+    fn path() -> PathBuf {
+        PathBuf::from("/docs/README.md")
+    }
+
+    #[test]
+    fn successful_read_shows_document() {
+        let mut app = app();
+        app.loaded(path(), Ok("# Hello".into()));
+        assert!(matches!(&app.state, State::Loaded(doc) if doc.path == path()));
+        assert!(app.reload_error.is_none());
+    }
+
+    #[test]
+    fn failed_first_read_shows_error() {
+        let mut app = app();
+        app.loaded(path(), Err("not found".into()));
+        assert!(matches!(&app.state, State::Failed { error, .. } if error == "not found"));
+    }
+
+    #[test]
+    fn failed_reload_keeps_last_content() {
+        let mut app = app();
+        app.loaded(path(), Ok("# Hello".into()));
+        app.loaded(path(), Err("removed".into()));
+        assert!(matches!(app.state, State::Loaded(_)));
+        assert_eq!(app.reload_error.as_deref(), Some("removed"));
+
+        app.loaded(path(), Ok("# Back".into()));
+        assert!(app.reload_error.is_none());
+    }
+
+    #[test]
+    fn failed_read_of_other_file_replaces_document() {
+        let mut app = app();
+        app.loaded(path(), Ok("# Hello".into()));
+        app.loaded(PathBuf::from("/docs/other.md"), Err("not found".into()));
+        assert!(matches!(app.state, State::Failed { .. }));
+    }
+
+    #[test]
+    fn stale_read_is_ignored() {
+        let mut app = app();
+        let _ = app.read(path());
+        let stale = app.request;
+        let _ = app.read(PathBuf::from("/docs/other.md"));
+        let _ = app.update(Message::Loaded {
+            request: stale,
+            path: path(),
+            result: Ok("# Old".into()),
+        });
+        assert!(matches!(app.state, State::Empty));
+    }
 }

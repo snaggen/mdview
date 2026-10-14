@@ -10,6 +10,7 @@ env_logger = "0.11"
 i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester"] }
 i18n-embed-fl = "0.10"
 log = "0.4"
+notify-debouncer-full = { version = "0.7", default-features = false }
 rust-embed = "8"
 tokio = { version = "1", features = ["fs"] }
 
@@ -29,7 +30,7 @@ features = [
 ]
 
 [dev-dependencies]
-tokio = { version = "1", features = ["fs", "macros", "rt"] }
+tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread", "time"] }
 
 [profile.release]
 lto = "thin"

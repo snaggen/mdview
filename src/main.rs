@@ -4,6 +4,7 @@ mod app;
 mod document;
 mod localize;
 mod style;
+mod watch;
 
 use std::path::PathBuf;
 

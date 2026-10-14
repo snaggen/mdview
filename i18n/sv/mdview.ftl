@@ -6,3 +6,4 @@ markdown-files = Markdown-filer
 empty-title = Inget dokument öppet
 empty-body = Öppna en Markdown-fil för att visa den här.
 load-failed = Kunde inte öppna { $path }
+reload-failed = Filen kunde inte läsas om: { $error }
