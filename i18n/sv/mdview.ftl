@@ -14,3 +14,5 @@ appearance = Utseende
 translucent-background = Genomskinlig bakgrund
 translucent-background-desc = Låt det suddiga skrivbordet synas bakom dokumentet.
 blur-strength = Genomskinlighet
+app-description = En enkel Markdown-visare för skrivbordsmiljön COSMIC.
+about = Om

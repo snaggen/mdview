@@ -14,3 +14,5 @@ appearance = Appearance
 translucent-background = Translucent background
 translucent-background-desc = Let the blurred desktop show through behind the document.
 blur-strength = Translucency
+app-description = A simple Markdown viewer for the COSMIC desktop.
+about = About

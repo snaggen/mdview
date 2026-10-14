@@ -5,8 +5,10 @@ use std::path::PathBuf;
 
 use cosmic::app::{Core, Task, context_drawer};
 use cosmic::dialog::file_chooser::{self, FileFilter};
+use cosmic::iced::keyboard::{Key, Modifiers};
 use cosmic::iced::widget::text_editor;
-use cosmic::iced::{Alignment, Color, Length, Subscription};
+use cosmic::iced::{Alignment, Color, Event, Length, Subscription, event, keyboard};
+use cosmic::widget::about::About;
 use cosmic::widget::{self, button, icon, markdown, settings, tooltip};
 use cosmic::{Application, ApplicationExt, Element, action, theme};
 
@@ -25,9 +27,19 @@ const READABLE_WIDTH: f32 = 860.0;
 /// Size of the icon shown in the empty and error states.
 const STATUS_ICON_SIZE: u16 = 64;
 
+/// Size of the warning icon in the header bar, matching header button icons.
+const HEADER_ICON_SIZE: u16 = 16;
+
 /// Command line input.
 pub struct Flags {
     pub path: Option<PathBuf>,
+}
+
+/// The page shown in the context drawer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContextPage {
+    Settings,
+    About,
 }
 
 /// What the content area currently shows.
@@ -71,10 +83,15 @@ pub enum Message {
         dark: bool,
         highlights: HashMap<u64, Vec<highlight::Line>>,
     },
-    FileChanged,
     LinkClicked(markdown::Uri),
     ToggleSource,
     ToggleSettings,
+    ShowAbout,
+    /// A link on the about page.
+    OpenUrl(String),
+    /// Re-read the open file: on request, or because it changed on disk.
+    Reload,
+    Quit,
     SetTranslucent(bool),
     SetBlurLevel(u8),
     /// The settings were changed on disk, e.g. by another instance.
@@ -101,6 +118,8 @@ pub struct App {
     show_source: bool,
     config: Config,
     config_handler: Option<cosmic::cosmic_config::Config>,
+    context_page: ContextPage,
+    about: About,
 }
 
 impl Application for App {
@@ -136,6 +155,8 @@ impl Application for App {
             show_source: false,
             config,
             config_handler,
+            context_page: ContextPage::Settings,
+            about: about(),
         };
         let title = app.update_title();
         let open = match flags.path {
@@ -182,10 +203,22 @@ impl Application for App {
         if !self.core.window.show_context {
             return None;
         }
-        Some(
-            context_drawer::context_drawer(self.settings_view(), Message::ToggleSettings)
-                .title(fl!("settings")),
-        )
+        Some(match self.context_page {
+            ContextPage::Settings => {
+                context_drawer::context_drawer(self.settings_view(), Message::ToggleSettings)
+                    .title(fl!("settings"))
+            }
+            ContextPage::About => context_drawer::about(
+                &self.about,
+                |url| Message::OpenUrl(url.to_owned()),
+                Message::ToggleSettings,
+            ),
+        })
+    }
+
+    fn on_escape(&mut self) -> Task<Message> {
+        self.set_show_context(false);
+        Task::none()
     }
 
     fn subscription(&self) -> Subscription<Message> {
@@ -194,10 +227,17 @@ impl Application for App {
             .watch_config::<Config>(Self::APP_ID)
             .map(|update| Message::ConfigChanged(update.config));
         let file = match self.state.path() {
-            Some(path) => watch::subscription(path.clone()).map(|()| Message::FileChanged),
+            Some(path) => watch::subscription(path.clone()).map(|()| Message::Reload),
             None => Subscription::none(),
         };
-        Subscription::batch([config, file])
+        let keys = event::listen_with(|event, status, _window| match (event, status) {
+            (
+                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }),
+                event::Status::Ignored,
+            ) => shortcut(&key, modifiers),
+            _ => None,
+        });
+        Subscription::batch([config, file, keys])
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -232,16 +272,29 @@ impl Application for App {
                     self.highlights = highlights;
                 }
             }
-            Message::FileChanged => {
+            Message::LinkClicked(url) => return self.follow_link(&url),
+            Message::ToggleSource => self.show_source = !self.show_source,
+            Message::ToggleSettings => {
+                // Closes the drawer, or opens it on the settings page.
+                let show =
+                    !self.core.window.show_context || self.context_page != ContextPage::Settings;
+                self.context_page = ContextPage::Settings;
+                self.set_show_context(show);
+            }
+            Message::ShowAbout => {
+                self.context_page = ContextPage::About;
+                self.set_show_context(true);
+            }
+            Message::OpenUrl(url) => open_externally(url),
+            Message::Reload => {
                 if let Some(path) = self.state.path() {
                     return self.read(path.clone());
                 }
             }
-            Message::LinkClicked(url) => return self.follow_link(&url),
-            Message::ToggleSource => self.show_source = !self.show_source,
-            Message::ToggleSettings => {
-                let show = !self.core.window.show_context;
-                self.set_show_context(show);
+            Message::Quit => {
+                if let Some(id) = self.core.main_window_id() {
+                    return cosmic::iced::window::close(id);
+                }
             }
             Message::SetTranslucent(translucent) => {
                 if let Some(handler) = &self.config_handler
@@ -445,7 +498,12 @@ impl App {
             let slider = widget::slider(0..=config::BLUR_LEVELS - 1, level, Message::SetBlurLevel);
             section = section.add(settings::item(fl!("blur-strength"), slider));
         }
-        section.into()
+        let about = button::standard(fl!("about")).on_press(Message::ShowAbout);
+        widget::column::with_capacity(2)
+            .push(section)
+            .push(about)
+            .spacing(theme::active().cosmic().spacing.space_m)
+            .into()
     }
 
     /// The Markdown source in a read-only, highlighted text editor, where text can be
@@ -515,6 +573,41 @@ impl App {
     }
 }
 
+/// The about page, shown in the context drawer.
+fn about() -> About {
+    About::default()
+        .name(fl!("app-title"))
+        .icon(icon::from_name(App::APP_ID))
+        .version(env!("CARGO_PKG_VERSION"))
+        .comments(fl!("app-description"))
+}
+
+/// The application action bound to a key press, if any.
+///
+/// | Keys | Action |
+/// |---|---|
+/// | Ctrl+O | open a file |
+/// | Ctrl+R | reload |
+/// | Ctrl+U | toggle Markdown source |
+/// | Ctrl+, | settings |
+/// | Ctrl+Q | quit |
+fn shortcut(key: &Key, modifiers: Modifiers) -> Option<Message> {
+    if !modifiers.control() || modifiers.alt() || modifiers.logo() {
+        return None;
+    }
+    let Key::Character(c) = key else {
+        return None;
+    };
+    match c.as_str() {
+        "o" => Some(Message::OpenDialog),
+        "r" => Some(Message::Reload),
+        "u" => Some(Message::ToggleSource),
+        "," => Some(Message::ToggleSettings),
+        "q" => Some(Message::Quit),
+        _ => None,
+    }
+}
+
 /// Highlights each code block, keyed by [`document::code_key`].
 fn highlight_blocks(
     blocks: &[CodeBlock],
@@ -573,7 +666,7 @@ fn open_externally(target: impl Into<std::ffi::OsString>) {
 /// A warning icon in the header bar, explaining itself in a tooltip.
 fn warning_indicator<'a>(message: String) -> Element<'a, Message> {
     tooltip(
-        icon::from_name("dialog-warning-symbolic").size(16),
+        icon::from_name("dialog-warning-symbolic").size(HEADER_ICON_SIZE),
         widget::text::body(message),
         tooltip::Position::Bottom,
     )
@@ -620,6 +713,8 @@ mod tests {
             show_source: false,
             config: Config::default(),
             config_handler: None,
+            context_page: ContextPage::Settings,
+            about: about(),
         }
     }
 
@@ -718,6 +813,36 @@ mod tests {
             app.config.blur_strength,
             cosmic::cosmic_theme::BlurStrength::Medium
         );
+    }
+
+    #[test]
+    fn shortcuts_need_ctrl() {
+        let key = Key::Character("u".into());
+        assert!(matches!(
+            shortcut(&key, Modifiers::CTRL),
+            Some(Message::ToggleSource)
+        ));
+        assert!(shortcut(&key, Modifiers::empty()).is_none());
+        assert!(shortcut(&key, Modifiers::CTRL | Modifiers::ALT).is_none());
+        let comma = Key::Character(",".into());
+        assert!(matches!(
+            shortcut(&comma, Modifiers::CTRL),
+            Some(Message::ToggleSettings)
+        ));
+    }
+
+    #[test]
+    fn settings_button_toggles_and_switches_from_about() {
+        let mut app = app();
+        let _ = app.update(Message::ToggleSettings);
+        assert!(app.core.window.show_context);
+        let _ = app.update(Message::ShowAbout);
+        assert_eq!(app.context_page, ContextPage::About);
+        let _ = app.update(Message::ToggleSettings);
+        assert!(app.core.window.show_context);
+        assert_eq!(app.context_page, ContextPage::Settings);
+        let _ = app.update(Message::ToggleSettings);
+        assert!(!app.core.window.show_context);
     }
 
     #[test]

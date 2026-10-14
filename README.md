@@ -7,6 +7,17 @@ Colours, fonts and light/dark mode follow the system theme.
 mdview path/to/file.md
 ```
 
+The view reloads when the file changes on disk. Code blocks are highlighted with the
+COSMIC syntax themes, and the settings let the document background be translucent.
+
+| Keys | Action |
+|---|---|
+| Ctrl+O | Open a file |
+| Ctrl+R | Reload |
+| Ctrl+U | Toggle Markdown source |
+| Ctrl+, | Settings |
+| Ctrl+Q | Quit |
+
 ## Build and install
 
 Toolchain versions are pinned in `mise.toml` (`mise install`).
