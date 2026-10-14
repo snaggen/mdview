@@ -63,3 +63,55 @@ pub fn source_editor(theme: &cosmic::Theme, _status: text_editor::Status) -> tex
         },
     }
 }
+
+/// Background of the content area: the theme's window background at the opacity
+/// chosen in the settings. Bottom corners follow the window's rounded corners.
+pub fn content(theme: &cosmic::Theme, alpha: f32, radius: [f32; 4]) -> container::Style {
+    let cosmic = theme.cosmic();
+    let background = Color::from(cosmic.bg_color());
+    container::Style {
+        background: Some(Background::Color(Color {
+            a: alpha,
+            ..background
+        })),
+        text_color: Some(Color::from(cosmic.on_bg_color())),
+        border: border::rounded([0.0, 0.0, radius[2], radius[3]]),
+        ..container::Style::default()
+    }
+}
+
+/// Corner radius of the window, matching what libcosmic uses for its frame.
+pub fn window_radius(theme: &cosmic::Theme, square: bool) -> [f32; 4] {
+    let cosmic = theme.cosmic();
+    if square {
+        cosmic.radius_0()
+    } else {
+        // libcosmic enlarges the radius of larger corners to visually align content
+        // with the window frame; the 1px frame border is subtracted.
+        cosmic
+            .radius_s()
+            .map(|r| if r < 4.0 { r } else { r + 4.0 } - 1.0)
+            .map(|r| r.max(0.0))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn square_window_has_no_radius() {
+        let theme = cosmic::Theme::dark();
+        assert_eq!(window_radius(&theme, true), theme.cosmic().radius_0());
+    }
+
+    #[test]
+    fn content_uses_requested_alpha() {
+        let theme = cosmic::Theme::dark();
+        let style = content(&theme, 0.5, [0.0; 4]);
+        let Some(Background::Color(color)) = style.background else {
+            panic!("expected a colour background");
+        };
+        assert_eq!(color.a, 0.5);
+    }
+}

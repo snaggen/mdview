@@ -1,6 +1,7 @@
 //! mdview: a simple Markdown viewer for the COSMIC desktop.
 
 mod app;
+mod config;
 mod document;
 mod highlight;
 mod link;

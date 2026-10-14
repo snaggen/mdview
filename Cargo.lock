@@ -3071,6 +3071,7 @@ dependencies = [
  "open",
  "pulldown-cmark",
  "rust-embed",
+ "serde",
  "syntect",
  "tokio",
  "two-face",

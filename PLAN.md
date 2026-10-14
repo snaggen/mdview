@@ -63,17 +63,19 @@ The setting applies to the **content area** (the document surface). Header bar a
 keep following the system theme.
 
 Implementation:
-- `core.set_auto_blur(Auto::Window | Auto::Popup)` in `init`, so the compositor blurs behind the window.
-- Setting `content_translucency`: `Strength(BlurStrength)` | `Opaque`. Default
-  **`Strength(VeryLow)`** (alpha ≈ 0.85 with the default alpha map).
-- The content container gets a custom style: the theme's background colour with alpha
-  `theme.cosmic().alpha_map.blurred_alpha(strength)` (the user's own alpha map, not hard-coded
-  values), or alpha 1.0 for `Opaque`. Only a style closure — no theme rebuild, so accent and
-  light/dark changes keep working untouched.
-- To verify in the prototype: whether the window is blurred at all when the system has
-  `frosted_windows` off (libcosmic gates blur on it). If not, either call `window::enable_blur`
-  ourselves when a strength is chosen, or document that system frosted windows must be on and
-  show it as a hint in the settings panel.
+- `core.set_auto_blur(Auto::Window | Auto::Popup)`, so the header and popups follow the system's
+  frosted glass setting.
+- `core.window.content_container = false`: libcosmic then paints no background under the content,
+  and the content area paints the theme's background colour itself with alpha
+  `theme.cosmic().alpha_map.blurred_alpha(strength)` (the user's own alpha map), or 1.0 when
+  opaque. Bottom corners follow the window radius. No theme rebuild, so accent and light/dark
+  changes keep working untouched.
+- Settings: `translucent: bool` (default on) and `blur_strength: BlurStrength` (default
+  **`VeryLow`**, alpha ≈ 0.85 with the default alpha map), shown as a toggle and a 14-step slider.
+- libcosmic only requests compositor blur when the system has frosted windows on. The app requests
+  it itself (`window::enable_blur`) whenever the content is translucent, and releases it only when
+  neither the content nor the system theme is translucent.
+- To verify on a real session: blur with system frosted windows off, and the corners.
 
 ### Source view
 
@@ -104,8 +106,8 @@ selectable and copyable. Edit actions are dropped in `update`. Monospace font fr
   settings.
 - Content: scrollable, centered column with a max readable width (theme spacing tokens, no raw
   numbers). The rendered view uses `markdown::Settings` derived from the theme's font sizes.
-- Settings: context drawer with one settings section, "Content translucency", as a dropdown:
-  ExtremelyLow … ExtremelyHigh2 (labelled readably, default VeryLow) · Opaque.
+- Settings: context drawer with an "Appearance" section: "Translucent background" toggle and a
+  translucency slider (hidden when opaque).
 - Empty state (no file): centered icon + "Open a Markdown file" + suggested button.
 - Error state (unreadable file): message in the content area, not a panic.
 - Keys: `Ctrl+O` open, `Ctrl+U` toggle source, `Ctrl+,` settings, `Ctrl+R` reload, `Ctrl+Q` quit.

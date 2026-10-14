@@ -3,13 +3,14 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use cosmic::app::{Core, Task};
+use cosmic::app::{Core, Task, context_drawer};
 use cosmic::dialog::file_chooser::{self, FileFilter};
 use cosmic::iced::widget::text_editor;
 use cosmic::iced::{Alignment, Color, Length, Subscription};
-use cosmic::widget::{self, button, icon, markdown, tooltip};
+use cosmic::widget::{self, button, icon, markdown, settings, tooltip};
 use cosmic::{Application, ApplicationExt, Element, action, theme};
 
+use crate::config::{self, Config};
 use crate::document::{self, CodeBlock, Document};
 use crate::fl;
 use crate::highlight::{self, SourceHighlighter};
@@ -73,6 +74,11 @@ pub enum Message {
     FileChanged,
     LinkClicked(markdown::Uri),
     ToggleSource,
+    ToggleSettings,
+    SetTranslucent(bool),
+    SetBlurLevel(u8),
+    /// The settings were changed on disk, e.g. by another instance.
+    ConfigChanged(Config),
     /// Cursor movement, selection or scrolling in the source view.
     SourceAction(text_editor::Action),
 }
@@ -93,6 +99,8 @@ pub struct App {
     dark: bool,
     /// Show the Markdown source instead of the rendered document.
     show_source: bool,
+    config: Config,
+    config_handler: Option<cosmic::cosmic_config::Config>,
 }
 
 impl Application for App {
@@ -110,7 +118,13 @@ impl Application for App {
         &mut self.core
     }
 
-    fn init(core: Core, flags: Flags) -> (Self, Task<Message>) {
+    fn init(mut core: Core, flags: Flags) -> (Self, Task<Message>) {
+        // The content area paints its own background, at the opacity chosen in the
+        // settings, instead of libcosmic's window background at the system's.
+        core.window.content_container = false;
+        // Follow the system's frosted glass setting for the header and popups.
+        core.set_auto_blur(cosmic::core::Auto::Window | cosmic::core::Auto::Popup);
+        let (config_handler, config) = Config::load(Self::APP_ID);
         let mut app = Self {
             core,
             state: State::Empty,
@@ -120,13 +134,16 @@ impl Application for App {
             highlights: HashMap::new(),
             dark: theme::active().cosmic().is_dark,
             show_source: false,
+            config,
+            config_handler,
         };
         let title = app.update_title();
         let open = match flags.path {
             Some(path) => app.open(path),
             None => Task::none(),
         };
-        (app, Task::batch([title, open]))
+        let blur = app.apply_blur();
+        (app, Task::batch([title, open, blur]))
     }
 
     fn header_end(&self) -> Vec<Element<'_, Message>> {
@@ -153,14 +170,34 @@ impl Application for App {
             fl!("open-file"),
             Message::OpenDialog,
         ));
+        items.push(icon_button(
+            "preferences-system-symbolic",
+            fl!("settings"),
+            Message::ToggleSettings,
+        ));
         items
     }
 
+    fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Message>> {
+        if !self.core.window.show_context {
+            return None;
+        }
+        Some(
+            context_drawer::context_drawer(self.settings_view(), Message::ToggleSettings)
+                .title(fl!("settings")),
+        )
+    }
+
     fn subscription(&self) -> Subscription<Message> {
-        match self.state.path() {
+        let config = self
+            .core
+            .watch_config::<Config>(Self::APP_ID)
+            .map(|update| Message::ConfigChanged(update.config));
+        let file = match self.state.path() {
             Some(path) => watch::subscription(path.clone()).map(|()| Message::FileChanged),
             None => Subscription::none(),
-        }
+        };
+        Subscription::batch([config, file])
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -202,6 +239,34 @@ impl Application for App {
             }
             Message::LinkClicked(url) => return self.follow_link(&url),
             Message::ToggleSource => self.show_source = !self.show_source,
+            Message::ToggleSettings => {
+                let show = !self.core.window.show_context;
+                self.set_show_context(show);
+            }
+            Message::SetTranslucent(translucent) => {
+                if let Some(handler) = &self.config_handler
+                    && let Err(error) = self.config.set_translucent(handler, translucent)
+                {
+                    log::warn!("cannot save setting: {error}");
+                }
+                self.config.translucent = translucent;
+                return self.apply_blur();
+            }
+            Message::SetBlurLevel(level) => {
+                let strength = config::blur_strength(level);
+                if let Some(handler) = &self.config_handler
+                    && let Err(error) = self.config.set_blur_strength(handler, strength)
+                {
+                    log::warn!("cannot save setting: {error}");
+                }
+                self.config.blur_strength = strength;
+            }
+            Message::ConfigChanged(config) => {
+                if config != self.config {
+                    self.config = config;
+                    return self.apply_blur();
+                }
+            }
             Message::SourceAction(action) => {
                 // The source view is read-only: apply everything except edits.
                 if let State::Loaded(doc) = &mut self.state
@@ -215,20 +280,17 @@ impl Application for App {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        match &self.state {
-            State::Empty => status_page(
-                "text-x-generic-symbolic",
-                fl!("empty-title"),
-                fl!("empty-body"),
-            ),
-            State::Failed { path, error } => status_page(
-                "dialog-error-symbolic",
-                fl!("load-failed", path = document::display_name(path)),
-                error.clone(),
-            ),
-            State::Loaded(doc) if self.show_source => self.source(doc),
-            State::Loaded(doc) => self.rendered(doc),
-        }
+        let theme = theme::active();
+        let alpha = self.config.content_alpha(theme.cosmic());
+        let window = &self.core.window;
+        let radius = style::window_radius(&theme, window.sharp_corners || window.is_maximized);
+        widget::container(self.content())
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .class(theme::Container::custom(move |theme| {
+                style::content(theme, alpha, radius)
+            }))
+            .into()
     }
 
     fn system_theme_update(
@@ -337,6 +399,53 @@ impl App {
                 .center_x(Length::Fill),
         )
         .into()
+    }
+
+    /// What the content area shows for the current state.
+    fn content(&self) -> Element<'_, Message> {
+        match &self.state {
+            State::Empty => status_page(
+                "text-x-generic-symbolic",
+                fl!("empty-title"),
+                fl!("empty-body"),
+            ),
+            State::Failed { path, error } => status_page(
+                "dialog-error-symbolic",
+                fl!("load-failed", path = document::display_name(path)),
+                error.clone(),
+            ),
+            State::Loaded(doc) if self.show_source => self.source(doc),
+            State::Loaded(doc) => self.rendered(doc),
+        }
+    }
+
+    /// Requests compositor blur behind the window when anything in it is translucent:
+    /// the content area (per the settings) or the header (per the system theme).
+    fn apply_blur(&self) -> Task<Message> {
+        let Some(id) = self.core.main_window_id() else {
+            return Task::none();
+        };
+        if self.config.translucent || theme::active().transparent {
+            cosmic::iced::window::enable_blur(id)
+        } else {
+            cosmic::iced::window::disable_blur(id)
+        }
+    }
+
+    /// The settings shown in the context drawer.
+    fn settings_view(&self) -> Element<'_, Message> {
+        let translucent = settings::item::builder(fl!("translucent-background"))
+            .description(fl!("translucent-background-desc"))
+            .toggler(self.config.translucent, Message::SetTranslucent);
+        let mut section = settings::section()
+            .title(fl!("appearance"))
+            .add(translucent);
+        if self.config.translucent {
+            let level = config::blur_level(self.config.blur_strength);
+            let slider = widget::slider(0..=config::BLUR_LEVELS - 1, level, Message::SetBlurLevel);
+            section = section.add(settings::item(fl!("blur-strength"), slider));
+        }
+        section.into()
     }
 
     /// The Markdown source in a read-only, highlighted text editor, where text can be
@@ -509,6 +618,8 @@ mod tests {
             highlights: HashMap::new(),
             dark: true,
             show_source: false,
+            config: Config::default(),
+            config_handler: None,
         }
     }
 
@@ -595,6 +706,18 @@ mod tests {
         };
         assert_eq!(doc.source.text(), "# Hello");
         assert_eq!(doc.source.selection().as_deref(), Some("# Hello"));
+    }
+
+    #[test]
+    fn settings_update_config() {
+        let mut app = app();
+        let _ = app.update(Message::SetTranslucent(false));
+        assert!(!app.config.translucent);
+        let _ = app.update(Message::SetBlurLevel(6));
+        assert_eq!(
+            app.config.blur_strength,
+            cosmic::cosmic_theme::BlurStrength::Medium
+        );
     }
 
     #[test]
