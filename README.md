@@ -104,6 +104,12 @@ just check                    # cargo fmt, clippy -D warnings and tests
   [Gruvbox Material](https://github.com/sainnhe/gruvbox-material) and
   [Everforest](https://github.com/sainnhe/everforest) (MIT).
 
+## Use of AI
+
+mdview is developed with the help of AI: much of the code and documentation was written with
+[Claude Code](https://claude.com/claude-code), under human direction and review. Commits
+with AI-written content carry a `Co-Authored-By: Claude` trailer.
+
 ## License
 
 mdview is licensed under the [European Union Public Licence 1.2](LICENSE).
