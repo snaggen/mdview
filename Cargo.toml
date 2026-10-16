@@ -2,7 +2,7 @@
 name = "mdview"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.90"
+rust-version = "1.93"
 description = "A simple Markdown viewer for the COSMIC desktop"
 license = "EUPL-1.2"
 repository = "https://github.com/snaggen/mdview"
@@ -29,7 +29,7 @@ rev = "b1e1eb0234568911e59888f092dfc779c609b499"
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
-rev = "5a8bd9482a35ae94c1e54edf77b331c6b970f170"
+rev = "e1f2cd2e52226aa50d59bb2cd6d43ffe290106ed"
 default-features = false
 features = [
     "about",
