@@ -14,10 +14,15 @@ come from your desktop theme.
 mdview README.md
 ```
 
+<p align="center">
+  <img src="res/screenshots/readme.png" alt="mdview showing its own README">
+</p>
+
 ## Features
 
 - **Native rendering** of CommonMark and GitHub extensions: tables, task lists, strikethrough,
   quotes, images and syntax-highlighted code.
+- **Copy button** beside every code block, putting the code on the clipboard.
 - **Follows the system theme**, including switching between light and dark while open.
 - **Live reload**: the view updates when the file is saved, keeping your scroll position. Works
   with editors that save by renaming a temporary file.
@@ -30,7 +35,7 @@ mdview README.md
 - Tables fit the page width and wrap their cells instead of scrolling sideways.
 
 Text selection in the rendered view is not supported yet (libcosmic's rich text widget has none);
-use the source view to copy text.
+copy code blocks with their copy button, or use the source view to copy other text.
 
 ## Usage
 
