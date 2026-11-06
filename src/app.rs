@@ -110,6 +110,8 @@ pub enum Message {
     ConfigChanged(Config),
     /// Cursor movement, selection or scrolling in the source view.
     SourceAction(text_editor::Action),
+    /// The copy button of a code block was pressed.
+    CopyCode(String),
 }
 
 pub struct App {
@@ -350,6 +352,7 @@ impl Application for App {
                 }
             }
             Message::SourceAction(action) => return self.source_action(action),
+            Message::CopyCode(code) => return cosmic::iced::clipboard::write(code),
         }
         Task::none()
     }

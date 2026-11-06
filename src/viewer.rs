@@ -7,11 +7,12 @@ use cosmic::iced::font::{Style, Weight};
 use cosmic::iced::widget::{rich_text, scrollable, span, table, text};
 use cosmic::iced::{Font, Length};
 use cosmic::widget::markdown::{self, Item, Settings};
-use cosmic::widget::{self, image, svg};
+use cosmic::widget::{self, image, svg, tooltip};
 use cosmic::{Element, Renderer, Theme};
 
 use crate::app::Message;
 use crate::document::code_key;
+use crate::fl;
 use crate::highlight;
 use crate::style;
 
@@ -86,20 +87,26 @@ impl<'a> markdown::Viewer<'a, Message, Theme, Renderer> for DocViewer<'a> {
                 .collect(),
         };
 
-        widget::container(
-            scrollable(
-                widget::container(widget::column::with_children(lines)).padding(settings.code_size),
-            )
-            .direction(scrollable::Direction::Horizontal(
-                scrollable::Scrollbar::default(),
-            )),
+        let code_view = scrollable(
+            widget::container(widget::column::with_children(lines)).padding(settings.code_size),
         )
-        .width(Length::Fill)
-        .class(cosmic::theme::Container::custom({
-            let background = self.code_background;
-            move |theme| style::code_block(theme, background)
-        }))
-        .into()
+        .direction(scrollable::Direction::Horizontal(
+            scrollable::Scrollbar::default(),
+        ))
+        .width(Length::Fill);
+
+        let code_box = widget::container(code_view).width(Length::Fill).class(
+            cosmic::theme::Container::custom({
+                let background = self.code_background;
+                move |theme| style::code_block(theme, background)
+            }),
+        );
+
+        // The copy button sits beside the code box rather than on it, so it never
+        // hides any code.
+        widget::row::with_children([code_box.into(), copy_button(code)])
+            .spacing(settings.spacing.0 / 4.0)
+            .into()
     }
 
     /// Tables span the page width and wrap their cells, instead of the default
@@ -134,6 +141,25 @@ impl<'a> markdown::Viewer<'a, Message, Theme, Renderer> for DocViewer<'a> {
             .separator_x(0)
             .into()
     }
+}
+
+/// A small icon button that copies a code block to the clipboard.
+fn copy_button<'a>(code: &str) -> Element<'a, Message> {
+    tooltip(
+        widget::button::icon(widget::icon::from_name("edit-copy-symbolic"))
+            .extra_small()
+            .class(style::subtle_icon_button())
+            .on_press(Message::CopyCode(clipboard_text(code).to_owned())),
+        widget::text::body(fl!("copy-code")),
+        tooltip::Position::Left,
+    )
+    .into()
+}
+
+/// The text copied for a code block: its code without the final line break the
+/// Markdown parser keeps, so pasting does not add an empty line.
+fn clipboard_text(code: &str) -> &str {
+    code.strip_suffix('\n').unwrap_or(code)
 }
 
 /// One line of a code block.
@@ -237,6 +263,14 @@ mod tests {
     fn columns_are_weighted_by_longest_text() {
         let table = "| # | Description |\n|---|---|\n| 1 | A somewhat longer cell |\n";
         assert_eq!(weights(table), vec![3, 22]);
+    }
+
+    #[test]
+    fn copied_code_drops_only_the_final_line_break() {
+        assert_eq!(clipboard_text("let a = 1;\n"), "let a = 1;");
+        assert_eq!(clipboard_text("a\n\n"), "a\n");
+        assert_eq!(clipboard_text("a\nb"), "a\nb");
+        assert_eq!(clipboard_text(""), "");
     }
 
     #[test]

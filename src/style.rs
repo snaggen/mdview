@@ -30,6 +30,46 @@ pub fn code_block(theme: &cosmic::Theme, background: Option<Color>) -> container
     }
 }
 
+/// How far a [`subtle_icon_button`]'s icon is blended from the text colour towards
+/// the background (0 = text colour, 1 = invisible) until it is hovered or pressed.
+const SUBTLE_ICON_FADE: f32 = 0.7;
+
+/// An icon button whose icon is faded until the pointer is over it, for buttons
+/// repeated throughout the document that should not draw attention.
+pub fn subtle_icon_button() -> cosmic::theme::Button {
+    use cosmic::theme::Button;
+    use cosmic::widget::button::Catalog;
+
+    cosmic::theme::Button::Custom {
+        active: Box::new(|focused, theme| {
+            let mut style = theme.active(focused, false, &Button::Icon);
+            // The SVG renderer tints icons with the colour's RGB only and drops its
+            // alpha, so fade by blending with the background instead.
+            let cosmic = theme.cosmic();
+            style.icon_color = Some(mix(
+                Color::from(cosmic.on_bg_color()),
+                Color::from(cosmic.bg_color()),
+                SUBTLE_ICON_FADE,
+            ));
+            style
+        }),
+        disabled: Box::new(|theme| theme.disabled(&Button::Icon)),
+        hovered: Box::new(|focused, theme| theme.hovered(focused, false, &Button::Icon)),
+        pressed: Box::new(|focused, theme| theme.pressed(focused, false, &Button::Icon)),
+    }
+}
+
+/// The colour `t` of the way from `from` to `to`, keeping `from`'s alpha.
+fn mix(from: Color, to: Color, t: f32) -> Color {
+    let lerp = |a: f32, b: f32| a + (b - a) * t;
+    Color {
+        r: lerp(from.r, to.r),
+        g: lerp(from.g, to.g),
+        b: lerp(from.b, to.b),
+        a: from.a,
+    }
+}
+
 /// The markdown widget's default style hard-codes a dark inline-code background,
 /// so build one from the COSMIC theme instead.
 fn markdown_style(theme: &cosmic::Theme) -> markdown::Style {
@@ -115,5 +155,13 @@ mod tests {
             panic!("expected a colour background");
         };
         assert_eq!(color.a, 0.5);
+    }
+
+    #[test]
+    fn mix_blends_rgb_and_keeps_alpha() {
+        let from = Color::from_rgba(1.0, 1.0, 1.0, 0.8);
+        let mixed = mix(from, Color::BLACK, 0.25);
+        assert_eq!(mixed, Color::from_rgba(0.75, 0.75, 0.75, 0.8));
+        assert_eq!(mix(from, Color::BLACK, 0.0), from);
     }
 }

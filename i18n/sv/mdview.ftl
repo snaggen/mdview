@@ -15,3 +15,4 @@ app-description = En enkel Markdown-visare för skrivbordsmiljön COSMIC.
 about = Om
 repository = Källkod
 syntax-theme = Kodfärger
+copy-code = Kopiera
